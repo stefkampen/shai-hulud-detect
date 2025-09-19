@@ -539,7 +539,7 @@ check_package_integrity() {
                 fi
             fi
         fi
-    done < <(find "$scan_dir" \( -name "package-lock.json" -o -name "yarn.lock" \) -print0 2>/dev/null)
+    done < <(find "$scan_dir" \( -name "pnpm-lock.yaml" -o -name "yarn.lock" -o -name "package-lock.json" \) -print0 2>/dev/null)
 }
 
 # Check for typosquatting and homoglyph attacks
