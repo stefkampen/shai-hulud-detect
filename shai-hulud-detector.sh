@@ -156,6 +156,71 @@ check_file_hashes() {
     done < <(find "$scan_dir" -type f \( -name "*.js" -o -name "*.ts" -o -name "*.json" \) -print0 2>/dev/null)
 }
 
+# Reads pnpm.yaml
+# Outputs pseudo-package-lock
+transform_pnpm_yaml() {
+    declare -a path
+    packages_file=$1
+
+    echo -e "{"
+    echo -e "  \"packages\": {"
+
+    depth=0
+    while IFS= read -r line; do
+
+        # Find indentation
+        sep="${line%%[^ ]*}"
+        currentdepth="${#sep}"
+
+        # Remove surrounding whitespace
+        line=${line##*( )} # From the beginning
+        line=${line%%*( )} # From the end
+
+        # Remove comments
+        line=${line%%#*}
+        line=${line%%*( )}
+
+        # Remove comments and empty lines
+        if [[ "${line:0:1}" == '#' ]] || [[ "${#line}" == 0 ]]; then
+            continue
+        fi
+
+        # split into key/val
+        key=${line%%:*}
+        key=${key%%*( )}
+        val=${line#*:}
+        val=${val##*( )}
+
+        # Save current path
+        path[$currentdepth]=$key
+
+        # Interested in packages.*
+        if [ "${path[0]}" != "packages" ]; then continue; fi
+        if [ "${currentdepth}" != "2" ]; then continue; fi
+
+        # Remove surrounding whitespace (yes, again)
+        key="${key#"${key%%[![:space:]]*}"}"
+        key="${key%"${key##*[![:space:]]}"}"
+
+        # Remove quote
+        key="${key#"${key%%[!\']*}"}"
+        key="${key%"${key##*[!\']}"}"
+
+        # split into name/version
+        name=${key%\@*}
+        name=${name%*( )}
+        version=${key##*@}
+        version=${version##*( )}
+
+        echo "    \"${name}\": {"
+        echo "      \"version\": \"${version}\""
+        echo "    },"
+
+    done < "$packages_file"
+    echo "  }"
+    echo "}"
+}
+
 # Check package.json files for compromised packages
 check_packages() {
     local scan_dir=$1
@@ -173,9 +238,9 @@ check_packages() {
                     local found_version
                     found_version=$(grep -A1 "\"$package_name\"" "$package_file" | grep -o '"[0-9]\+\.[0-9]\+\.[0-9]\+"' | tr -d '"' | head -1 || true)
                     if [[ "$found_version" == "$malicious_version" ]]; then
-                        COMPROMISED_FOUND+=("$package_file:$package_name@$malicious_version")
+                        COMPROMISED_FOUND+=("$org_file:$package_name@$malicious_version")
                     else
-                        COMPROMISED_FOUND+=("$package_file:$package_name not this version")
+                        COMPROMISED_FOUND+=("$org_file:$package_name not this version")
                     fi
                 fi
             done
@@ -183,9 +248,10 @@ check_packages() {
             # Check for suspicious namespaces
             for namespace in "${COMPROMISED_NAMESPACES[@]}"; do
                 if grep -q "\"$namespace/" "$package_file" 2>/dev/null; then
-                    NAMESPACE_WARNINGS+=("$package_file:Contains packages from compromised namespace: $namespace")
+                    NAMESPACE_WARNINGS+=("$org_file:Contains packages from compromised namespace: $namespace")
                 fi
             done
+
         fi
     done < <(find "$scan_dir" -name "package.json" -print0 2>/dev/null)
 }
@@ -505,6 +571,15 @@ check_package_integrity() {
     # Check package-lock.json files
     while IFS= read -r -d '' lockfile; do
         if [[ -f "$lockfile" && -r "$lockfile" ]]; then
+
+            # Transform pnpm-lock.yaml into pseudo-package-lock
+            org_file=$lockfile
+            if [[ "$(basename $org_file)" == "pnpm-lock.yaml" ]]; then
+                org_file=$lockfile
+                lockfile=$(mktemp lockfile.XXXXXXXX)
+                transform_pnpm_yaml $org_file > $lockfile
+            fi
+
             # Look for compromised packages in lockfiles
             for package_info in "${COMPROMISED_PACKAGES[@]}"; do
                 local package_name="${package_info%:*}"
@@ -514,9 +589,9 @@ check_package_integrity() {
                     local found_version
                     found_version=$(grep -A5 "\"$package_name\"" "$lockfile" | grep '"version":' | head -1 | grep -o '"[0-9]\+\.[0-9]\+\.[0-9]\+"' | tr -d '"' || true)
                     if [[ "$found_version" == "$malicious_version" ]]; then
-                        INTEGRITY_ISSUES+=("$lockfile:Compromised package in lockfile: $package_name@$malicious_version")
+                        INTEGRITY_ISSUES+=("$org_file:Compromised package in lockfile: $package_name@$malicious_version")
                     else
-                        INTEGRITY_ISSUES+=("$lockfile:You are using packages with known malafide versions (not this specific version $malicious_version): $package_name")
+                        INTEGRITY_ISSUES+=("$org_file:You are using packages with known malafide versions (not this specific version $malicious_version): $package_name")
                     fi
                 fi
             done
@@ -535,9 +610,16 @@ check_package_integrity() {
 
                 # Flag if lockfile with @ctrl packages was modified in the last 30 days
                 if [[ $age_diff -lt 2592000 ]]; then  # 30 days in seconds
-                    INTEGRITY_ISSUES+=("$lockfile:Recently modified lockfile contains @ctrl packages (potential worm activity)")
+                    INTEGRITY_ISSUES+=("$org_file:Recently modified lockfile contains @ctrl packages (potential worm activity)")
                 fi
             fi
+
+            # Revert virtual package-lock
+            if [[ "$(basename $org_file)" == "pnpm-lock.yaml" ]]; then
+                rm $lockfile
+                lockfile=$org_file
+            fi
+
         fi
     done < <(find "$scan_dir" \( -name "pnpm-lock.yaml" -o -name "yarn.lock" -o -name "package-lock.json" \) -print0 2>/dev/null)
 }
