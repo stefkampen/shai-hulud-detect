@@ -238,9 +238,9 @@ check_packages() {
                     local found_version
                     found_version=$(grep -A1 "\"$package_name\"" "$package_file" | grep -o '"[0-9]\+\.[0-9]\+\.[0-9]\+"' | tr -d '"' | head -1 || true)
                     if [[ "$found_version" == "$malicious_version" ]]; then
-                        COMPROMISED_FOUND+=("$org_file:$package_name@$malicious_version")
+                        COMPROMISED_FOUND+=("$package_file:$package_name@$malicious_version")
                     else
-                        COMPROMISED_FOUND+=("$org_file:$package_name not this version")
+                        COMPROMISED_FOUND+=("$package_file:$package_name not this version")
                     fi
                 fi
             done
@@ -248,7 +248,7 @@ check_packages() {
             # Check for suspicious namespaces
             for namespace in "${COMPROMISED_NAMESPACES[@]}"; do
                 if grep -q "\"$namespace/" "$package_file" 2>/dev/null; then
-                    NAMESPACE_WARNINGS+=("$org_file:Contains packages from compromised namespace: $namespace")
+                    NAMESPACE_WARNINGS+=("$package_file:Contains packages from compromised namespace: $namespace")
                 fi
             done
 
