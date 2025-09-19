@@ -171,9 +171,11 @@ check_packages() {
                 # Check both dependencies and devDependencies sections
                 if grep -q "\"$package_name\"" "$package_file" 2>/dev/null; then
                     local found_version
-                    found_version=$(grep -A1 "\"$package_name\"" "$package_file" | grep -o '"[0-9]\+\.[0-9]\+\.[0-9]\+"' | tr -d '"' | head -1)
+                    found_version=$(grep -A1 "\"$package_name\"" "$package_file" | grep -o '"[0-9]\+\.[0-9]\+\.[0-9]\+"' | tr -d '"' | head -1 || true)
                     if [[ "$found_version" == "$malicious_version" ]]; then
                         COMPROMISED_FOUND+=("$package_file:$package_name@$malicious_version")
+                    else
+                        COMPROMISED_FOUND+=("$package_file:$package_name not this version")
                     fi
                 fi
             done
@@ -510,9 +512,11 @@ check_package_integrity() {
 
                 if grep -q "\"$package_name\"" "$lockfile" 2>/dev/null; then
                     local found_version
-                    found_version=$(grep -A5 "\"$package_name\"" "$lockfile" | grep '"version":' | head -1 | grep -o '"[0-9]\+\.[0-9]\+\.[0-9]\+"' | tr -d '"')
+                    found_version=$(grep -A5 "\"$package_name\"" "$lockfile" | grep '"version":' | head -1 | grep -o '"[0-9]\+\.[0-9]\+\.[0-9]\+"' | tr -d '"' || true)
                     if [[ "$found_version" == "$malicious_version" ]]; then
                         INTEGRITY_ISSUES+=("$lockfile:Compromised package in lockfile: $package_name@$malicious_version")
+                    else
+                        INTEGRITY_ISSUES+=("$lockfile:You are using packages with known malafide versions (not this specific version $malicious_version): $package_name")
                     fi
                 fi
             done
@@ -535,7 +539,7 @@ check_package_integrity() {
                 fi
             fi
         fi
-    done < <(find "$scan_dir" -name "package-lock.json" -o -name "yarn.lock" -print0 2>/dev/null)
+    done < <(find "$scan_dir" \( -name "package-lock.json" -o -name "yarn.lock" \) -print0 2>/dev/null)
 }
 
 # Check for typosquatting and homoglyph attacks
