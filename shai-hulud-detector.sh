@@ -13,8 +13,18 @@ GREEN='\033[0;32m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
-# Known malicious file hash
-MALICIOUS_HASH="46faab8ab153fae6e80e7cca38eab363075bb524edd79e42269217a083628f09"
+# Known malicious file hashed (source: https://socket.dev/blog/ongoing-supply-chain-attack-targets-crowdstrike-npm-packages)
+MALICIOUS_HASHLIST=(
+    "de0e25a3e6c1e1e5998b306b7141b3dc4c0088da9d7bb47c1c00c91e6e4f85d6"
+    "81d2a004a1bca6ef87a1caf7d0e0b355ad1764238e40ff6d1b1cb77ad4f595c3"
+    "83a650ce44b2a9854802a7fb4c202877815274c129af49e6c2d1d5d5d55c501e"
+    "4b2399646573bb737c4969563303d8ee2e9ddbd1b271f1ca9e35ea78062538db"
+    "dc67467a39b70d1cd4c1f7f7a459b35058163592f4a9e8fb4dffcbba98ef210c"
+    "46faab8ab153fae6e80e7cca38eab363075bb524edd79e42269217a083628f09"
+    "b74caeaa75e077c99f7d44f46daaf9796a3be43ecf24f2a1fd381844669da777"
+    "86532ed94c5804e1ca32fa67257e1bb9de628e3e48a1f56e67042dc055effb5b" # test-cases/multi-hash-detection/file1.js
+    "aba1fcbd15c6ba6d9b96e34cec287660fff4a31632bf76f2a766c499f55ca1ee" # test-cases/multi-hash-detection/file2.js
+)
 
 # Load compromised packages from external file
 # This allows for easier maintenance and updates as new compromised packages are discovered
@@ -143,17 +153,31 @@ check_workflow_files() {
 # Check file hashes against known malicious hash
 check_file_hashes() {
     local scan_dir=$1
-    print_status "$BLUE" "🔍 Checking file hashes for known malicious content..."
 
+    local filesCount
+    filesCount=$(($(find "$scan_dir" -type f \( -name "*.js" -o -name "*.ts" -o -name "*.json" \) | wc -l 2>/dev/null)))
+
+    print_status "$BLUE" "🔍 Checking $filesCount files for known malicious content..."
+
+    local filesChecked
+    filesChecked=0
     while IFS= read -r -d '' file; do
         if [[ -f "$file" && -r "$file" ]]; then
             local file_hash
             file_hash=$(shasum -a 256 "$file" 2>/dev/null | cut -d' ' -f1)
-            if [[ "$file_hash" == "$MALICIOUS_HASH" ]]; then
-                MALICIOUS_HASHES+=("$file:$file_hash")
-            fi
+
+            # Check for malicious files
+            for malicious_hash in "${MALICIOUS_HASHLIST[@]}"; do
+                if [[ "$malicious_hash" == "$file_hash" ]]; then
+                    MALICIOUS_HASHES+=("$file:$file_hash")
+                fi
+            done
         fi
+        filesChecked=$((filesChecked+1))
+        echo -ne "\r\033[K$filesChecked / $filesCount checked ($((filesChecked*100/filesCount)) %)"
+
     done < <(find "$scan_dir" -type f \( -name "*.js" -o -name "*.ts" -o -name "*.json" \) -print0 2>/dev/null)
+    echo -ne "\r\033[K"
 }
 
 # Reads pnpm.yaml
@@ -224,8 +248,14 @@ transform_pnpm_yaml() {
 # Check package.json files for compromised packages
 check_packages() {
     local scan_dir=$1
-    print_status "$BLUE" "🔍 Checking package.json files for compromised packages..."
 
+    local filesCount
+    filesCount=$(($(find "$scan_dir" -name "package.json" | wc -l 2>/dev/null)))
+
+    print_status "$BLUE" "🔍 Checking $filesCount package.json files for compromised packages..."
+
+    local filesChecked
+    filesChecked=0
     while IFS= read -r -d '' package_file; do
         if [[ -f "$package_file" && -r "$package_file" ]]; then
             # Check for specific compromised packages
@@ -234,13 +264,11 @@ check_packages() {
                 local malicious_version="${package_info#*:}"
 
                 # Check both dependencies and devDependencies sections
-                if grep -q "\"$package_name\"" "$package_file" 2>/dev/null; then
+                if grep -q "\"$package_name\":" "$package_file" 2>/dev/null; then
                     local found_version
-                    found_version=$(grep -A1 "\"$package_name\"" "$package_file" | grep -o '"[0-9]\+\.[0-9]\+\.[0-9]\+"' | tr -d '"' | head -1 || true)
-                    if [[ "$found_version" == "$malicious_version" ]]; then
-                        COMPROMISED_FOUND+=("$org_file:$package_name@$malicious_version")
-                    else
-                        COMPROMISED_FOUND+=("$org_file:$package_name not this version")
+                    found_version=$(grep -A1 "\"$package_name\":" "$package_file" 2>/dev/null | grep -o '"[0-9]\+\.[0-9]\+\.[0-9]\+"' 2>/dev/null | tr -d '"' | head -1 2>/dev/null) || true
+                    if [[ -n "$found_version" && "$found_version" == "$malicious_version" ]]; then
+                        COMPROMISED_FOUND+=("$package_file:$package_name@$malicious_version")
                     fi
                 fi
             done
@@ -248,12 +276,17 @@ check_packages() {
             # Check for suspicious namespaces
             for namespace in "${COMPROMISED_NAMESPACES[@]}"; do
                 if grep -q "\"$namespace/" "$package_file" 2>/dev/null; then
-                    NAMESPACE_WARNINGS+=("$org_file:Contains packages from compromised namespace: $namespace")
+                    NAMESPACE_WARNINGS+=("$package_file:Contains packages from compromised namespace: $namespace")
                 fi
             done
 
         fi
+
+        filesChecked=$((filesChecked+1))
+        echo -ne "\r\033[K$filesChecked / $filesCount checked ($((filesChecked*100/filesCount)) %)"
+
     done < <(find "$scan_dir" -name "package.json" -print0 2>/dev/null)
+    echo -ne "\r\033[K"
 }
 
 # Check for suspicious postinstall hooks
@@ -266,10 +299,10 @@ check_postinstall_hooks() {
             # Look for postinstall scripts
             if grep -q "\"postinstall\"" "$package_file" 2>/dev/null; then
                 local postinstall_cmd
-                postinstall_cmd=$(grep -A1 "\"postinstall\"" "$package_file" | grep -o '"[^"]*"' | tail -1 | tr -d '"')
+                postinstall_cmd=$(grep -A1 "\"postinstall\"" "$package_file" 2>/dev/null | grep -o '"[^"]*"' 2>/dev/null | tail -1 2>/dev/null | tr -d '"' 2>/dev/null) || true
 
                 # Check for suspicious patterns in postinstall commands
-                if [[ "$postinstall_cmd" == *"curl"* ]] || [[ "$postinstall_cmd" == *"wget"* ]] || [[ "$postinstall_cmd" == *"node -e"* ]] || [[ "$postinstall_cmd" == *"eval"* ]]; then
+                if [[ -n "$postinstall_cmd" ]] && ([[ "$postinstall_cmd" == *"curl"* ]] || [[ "$postinstall_cmd" == *"wget"* ]] || [[ "$postinstall_cmd" == *"node -e"* ]] || [[ "$postinstall_cmd" == *"eval"* ]]); then
                     POSTINSTALL_HOOKS+=("$package_file:Suspicious postinstall: $postinstall_cmd")
                 fi
             fi
@@ -587,11 +620,9 @@ check_package_integrity() {
 
                 if grep -q "\"$package_name\"" "$lockfile" 2>/dev/null; then
                     local found_version
-                    found_version=$(grep -A5 "\"$package_name\"" "$lockfile" | grep '"version":' | head -1 | grep -o '"[0-9]\+\.[0-9]\+\.[0-9]\+"' | tr -d '"' || true)
-                    if [[ "$found_version" == "$malicious_version" ]]; then
+                    found_version=$(grep -A5 "\"$package_name\"" "$lockfile" 2>/dev/null | grep '"version":' 2>/dev/null | head -1 2>/dev/null | grep -o '"[0-9]\+\.[0-9]\+\.[0-9]\+"' 2>/dev/null | tr -d '"' 2>/dev/null) || true
+                    if [[ -n "$found_version" && "$found_version" == "$malicious_version" ]]; then
                         INTEGRITY_ISSUES+=("$org_file:Compromised package in lockfile: $package_name@$malicious_version")
-                    else
-                        INTEGRITY_ISSUES+=("$org_file:You are using packages with known malafide versions (not this specific version $malicious_version): $package_name")
                     fi
                 fi
             done
@@ -603,7 +634,7 @@ check_package_integrity() {
             # Check for recently modified lockfiles with @ctrl packages (potential worm activity)
             if grep -q "@ctrl" "$lockfile" 2>/dev/null; then
                 local file_age
-                file_age=$(stat -f "%m" "$lockfile" 2>/dev/null || echo "0")
+                file_age=$(date -r "$lockfile" +%s 2>/dev/null || echo "0")
                 local current_time
                 current_time=$(date +%s)
                 local age_diff=$((current_time - file_age))
@@ -705,7 +736,7 @@ check_typosquatting() {
                         local diff_count=0
                         for ((i=0; i<${#package_name}; i++)); do
                             if [[ "${package_name:$i:1}" != "${popular:$i:1}" ]]; then
-                                ((diff_count++))
+                                diff_count=$((diff_count+1))
                             fi
                         done
 
@@ -761,7 +792,7 @@ check_typosquatting() {
                                 local ns_diff=0
                                 for ((i=0; i<${#ns_clean}; i++)); do
                                     if [[ "${ns_clean:$i:1}" != "${sus_clean:$i:1}" ]]; then
-                                        ((ns_diff++))
+                                        ns_diff=$((ns_diff+1))
                                     fi
                                 done
 
@@ -826,24 +857,32 @@ check_network_exfiltration() {
                     if grep -q "https\?://[^[:space:]]*$domain\|[[:space:]]$domain[[:space:/]\"\']" "$file" 2>/dev/null; then
                         # Additional check - make sure it's not just a comment or documentation
                         local suspicious_usage
-                        suspicious_usage=$(grep "https\?://[^[:space:]]*$domain\|[[:space:]]$domain[[:space:/]\"\']" "$file" | grep -v "^[[:space:]]*#\|^[[:space:]]*//" | head -1)
+                        suspicious_usage=$(grep "https\?://[^[:space:]]*$domain\|[[:space:]]$domain[[:space:/]\"\']" "$file" 2>/dev/null | grep -v "^[[:space:]]*#\|^[[:space:]]*//" 2>/dev/null | head -1 2>/dev/null) || true
                         if [[ -n "$suspicious_usage" ]]; then
                             # Get line number and context
                             local line_info
-                            line_info=$(grep -n "https\?://[^[:space:]]*$domain\|[[:space:]]$domain[[:space:/]\"\']" "$file" | grep -v "^[[:space:]]*#\|^[[:space:]]*//" | head -1)
+                            line_info=$(grep -n "https\?://[^[:space:]]*$domain\|[[:space:]]$domain[[:space:/]\"\']" "$file" 2>/dev/null | grep -v "^[[:space:]]*#\|^[[:space:]]*//" 2>/dev/null | head -1 2>/dev/null) || true
                             local line_num
-                            line_num=$(echo "$line_info" | cut -d: -f1)
+                            line_num=$(echo "$line_info" | cut -d: -f1 2>/dev/null) || true
 
                             # Check if it's a minified file or has very long lines
-                            if [[ "$file" == *".min.js"* ]] || [[ $(echo "$suspicious_usage" | wc -c) -gt 150 ]]; then
+                            if [[ "$file" == *".min.js"* ]] || [[ $(echo "$suspicious_usage" | wc -c 2>/dev/null) -gt 150 ]]; then
                                 # Extract just around the domain
                                 local snippet
-                                snippet=$(echo "$suspicious_usage" | grep -o ".\{0,20\}$domain.\{0,20\}" | head -1)
-                                NETWORK_EXFILTRATION_WARNINGS+=("$file:Suspicious domain found: $domain at line $line_num: ...${snippet}...")
+                                snippet=$(echo "$suspicious_usage" | grep -o ".\{0,20\}$domain.\{0,20\}" 2>/dev/null | head -1 2>/dev/null) || true
+                                if [[ -n "$line_num" ]]; then
+                                    NETWORK_EXFILTRATION_WARNINGS+=("$file:Suspicious domain found: $domain at line $line_num: ...${snippet}...")
+                                else
+                                    NETWORK_EXFILTRATION_WARNINGS+=("$file:Suspicious domain found: $domain: ...${snippet}...")
+                                fi
                             else
                                 local snippet
-                                snippet=$(echo "$suspicious_usage" | cut -c1-80)
-                                NETWORK_EXFILTRATION_WARNINGS+=("$file:Suspicious domain found: $domain at line $line_num: ${snippet}...")
+                                snippet=$(echo "$suspicious_usage" | cut -c1-80 2>/dev/null) || true
+                                if [[ -n "$line_num" ]]; then
+                                    NETWORK_EXFILTRATION_WARNINGS+=("$file:Suspicious domain found: $domain at line $line_num: ${snippet}...")
+                                else
+                                    NETWORK_EXFILTRATION_WARNINGS+=("$file:Suspicious domain found: $domain: ${snippet}...")
+                                fi
                             fi
                         fi
                     fi
@@ -855,17 +894,21 @@ check_network_exfiltration() {
                 if grep -q 'atob(' "$file" 2>/dev/null || grep -q 'base64.*decode' "$file" 2>/dev/null; then
                     # Get line number and a small snippet
                     local line_num
-                    line_num=$(grep -n 'atob\|base64.*decode' "$file" | head -1 | cut -d: -f1)
+                    line_num=$(grep -n 'atob\|base64.*decode' "$file" 2>/dev/null | head -1 2>/dev/null | cut -d: -f1 2>/dev/null) || true
                     local snippet
 
                     # For minified files, try to extract just the relevant part
-                    if [[ "$file" == *".min.js"* ]] || [[ $(head -1 "$file" | wc -c) -gt 500 ]]; then
+                    if [[ "$file" == *".min.js"* ]] || [[ $(head -1 "$file" 2>/dev/null | wc -c 2>/dev/null) -gt 500 ]]; then
                         # Extract a small window around the atob call
-                        snippet=$(sed -n "${line_num}p" "$file" | grep -o '.\{0,30\}atob.\{0,30\}' | head -1)
-                        if [[ -z "$snippet" ]]; then
-                            snippet=$(sed -n "${line_num}p" "$file" | grep -o '.\{0,30\}base64.*decode.\{0,30\}' | head -1)
+                        if [[ -n "$line_num" ]]; then
+                            snippet=$(sed -n "${line_num}p" "$file" 2>/dev/null | grep -o '.\{0,30\}atob.\{0,30\}' 2>/dev/null | head -1 2>/dev/null) || true
+                            if [[ -z "$snippet" ]]; then
+                                snippet=$(sed -n "${line_num}p" "$file" 2>/dev/null | grep -o '.\{0,30\}base64.*decode.\{0,30\}' 2>/dev/null | head -1 2>/dev/null) || true
+                            fi
+                            NETWORK_EXFILTRATION_WARNINGS+=("$file:Base64 decoding at line $line_num: ...${snippet}...")
+                        else
+                            NETWORK_EXFILTRATION_WARNINGS+=("$file:Base64 decoding detected")
                         fi
-                        NETWORK_EXFILTRATION_WARNINGS+=("$file:Base64 decoding at line $line_num: ...${snippet}...")
                     else
                         snippet=$(sed -n "${line_num}p" "$file" | cut -c1-80)
                         NETWORK_EXFILTRATION_WARNINGS+=("$file:Base64 decoding at line $line_num: ${snippet}...")
@@ -900,15 +943,19 @@ check_network_exfiltration() {
             if [[ "$file" != *"/vendor/"* && "$file" != *"/node_modules/"* && "$file" != *".min.js"* ]]; then
                 if grep -q "btoa(" "$file" 2>/dev/null; then
                     # Check if it's near network operations (simplified to avoid hanging)
-                    if grep -C3 "btoa(" "$file" | grep -q "\(fetch\|XMLHttpRequest\|axios\)" 2>/dev/null; then
+                    if grep -C3 "btoa(" "$file" 2>/dev/null | grep -q "\(fetch\|XMLHttpRequest\|axios\)" 2>/dev/null; then
                         # Additional check - make sure it's not just legitimate authentication
-                        if ! grep -C3 "btoa(" "$file" | grep -q "Authorization:\|Basic \|Bearer " 2>/dev/null; then
+                        if ! grep -C3 "btoa(" "$file" 2>/dev/null | grep -q "Authorization:\|Basic \|Bearer " 2>/dev/null; then
                             # Get a small snippet around the btoa usage
                             local line_num
-                            line_num=$(grep -n "btoa(" "$file" | head -1 | cut -d: -f1)
+                            line_num=$(grep -n "btoa(" "$file" 2>/dev/null | head -1 2>/dev/null | cut -d: -f1 2>/dev/null) || true
                             local snippet
-                            snippet=$(sed -n "${line_num}p" "$file" | cut -c1-80)
-                            NETWORK_EXFILTRATION_WARNINGS+=("$file:Suspicious base64 encoding near network operation at line $line_num: ${snippet}...")
+                            if [[ -n "$line_num" ]]; then
+                                snippet=$(sed -n "${line_num}p" "$file" 2>/dev/null | cut -c1-80 2>/dev/null) || true
+                                NETWORK_EXFILTRATION_WARNINGS+=("$file:Suspicious base64 encoding near network operation at line $line_num: ${snippet}...")
+                            else
+                                NETWORK_EXFILTRATION_WARNINGS+=("$file:Suspicious base64 encoding near network operation")
+                            fi
                         fi
                     fi
                 fi
@@ -940,8 +987,8 @@ generate_report() {
         print_status "$RED" "🚨 HIGH RISK: Malicious workflow files detected:"
         for file in "${WORKFLOW_FILES[@]}"; do
             echo "   - $file"
-            show_file_preview "$file" "Known malicious workflow filename"
-            ((high_risk++))
+            show_file_preview "$file" "HIGH RISK: Known malicious workflow filename"
+            high_risk=$((high_risk+1))
         done
     fi
 
@@ -953,8 +1000,8 @@ generate_report() {
             local hash="${entry#*:}"
             echo "   - $file_path"
             echo "     Hash: $hash"
-            show_file_preview "$file_path" "File matches known malicious SHA-256 hash"
-            ((high_risk++))
+            show_file_preview "$file_path" "HIGH RISK: File matches known malicious SHA-256 hash"
+            high_risk=$((high_risk+1))
         done
     fi
 
@@ -966,8 +1013,8 @@ generate_report() {
             local package_info="${entry#*:}"
             echo "   - Package: $package_info"
             echo "     Found in: $file_path"
-            show_file_preview "$file_path" "Contains compromised package version: $package_info"
-            ((high_risk++))
+            show_file_preview "$file_path" "HIGH RISK: Contains compromised package version: $package_info"
+            high_risk=$((high_risk+1))
         done
         echo -e "   ${YELLOW}NOTE: These specific package versions are known to be compromised.${NC}"
         echo -e "   ${YELLOW}You should immediately update or remove these packages.${NC}"
@@ -983,7 +1030,7 @@ generate_report() {
             echo "   - Pattern: $pattern"
             echo "     Found in: $file_path"
             show_file_preview "$file_path" "Contains suspicious pattern: $pattern"
-            ((medium_risk++))
+            medium_risk=$((medium_risk+1))
         done
         echo -e "   ${YELLOW}NOTE: Manual review required to determine if these are malicious.${NC}"
         echo
@@ -1008,7 +1055,7 @@ generate_report() {
             print_status "$RED" "🚨 HIGH RISK: Cryptocurrency theft patterns detected:"
             for entry in "${crypto_high[@]}"; do
                 echo "   - ${entry}"
-                ((high_risk++))
+                high_risk=$((high_risk+1))
             done
             echo -e "   ${RED}NOTE: These patterns strongly indicate crypto theft malware from the September 8 attack.${NC}"
             echo -e "   ${RED}Immediate investigation and remediation required.${NC}"
@@ -1020,7 +1067,7 @@ generate_report() {
             print_status "$YELLOW" "⚠️  MEDIUM RISK: Potential cryptocurrency manipulation patterns:"
             for entry in "${crypto_medium[@]}"; do
                 echo "   - ${entry}"
-                ((medium_risk++))
+                medium_risk=$((medium_risk+1))
             done
             echo -e "   ${YELLOW}NOTE: These may be legitimate crypto tools or framework code.${NC}"
             echo -e "   ${YELLOW}Manual review recommended to determine if they are malicious.${NC}"
@@ -1043,7 +1090,7 @@ generate_report() {
             echo -e "     ${BLUE}│${NC}  git diff main...shai-hulud"
             echo -e "     ${BLUE}└─${NC}"
             echo
-            ((medium_risk++))
+            medium_risk=$((medium_risk+1))
         done
         echo -e "   ${YELLOW}NOTE: 'shai-hulud' branches may indicate compromise.${NC}"
         echo -e "   ${YELLOW}Use the commands above to investigate each branch.${NC}"
@@ -1058,8 +1105,8 @@ generate_report() {
             local hook_info="${entry#*:}"
             echo "   - Hook: $hook_info"
             echo "     Found in: $file_path"
-            show_file_preview "$file_path" "Contains suspicious postinstall hook: $hook_info"
-            ((high_risk++))
+            show_file_preview "$file_path" "HIGH RISK: Contains suspicious postinstall hook: $hook_info"
+            high_risk=$((high_risk+1))
         done
         echo -e "   ${YELLOW}NOTE: Postinstall hooks can execute arbitrary code during package installation.${NC}"
         echo -e "   ${YELLOW}Review these hooks carefully for malicious behavior.${NC}"
@@ -1100,7 +1147,7 @@ generate_report() {
             echo "   - Activity: $activity_info"
             echo "     Found in: $file_path"
             show_file_preview "$file_path" "HIGH RISK: $activity_info"
-            ((high_risk++))
+            high_risk=$((high_risk+1))
         done
         echo -e "   ${RED}NOTE: These patterns indicate likely malicious credential harvesting.${NC}"
         echo -e "   ${RED}Immediate investigation and remediation required.${NC}"
@@ -1116,7 +1163,7 @@ generate_report() {
             echo "   - Pattern: $activity_info"
             echo "     Found in: $file_path"
             show_file_preview "$file_path" "MEDIUM RISK: $activity_info"
-            ((medium_risk++))
+            medium_risk=$((medium_risk+1))
         done
         echo -e "   ${YELLOW}NOTE: These may be legitimate security tools or framework code.${NC}"
         echo -e "   ${YELLOW}Manual review recommended to determine if they are malicious.${NC}"
@@ -1143,7 +1190,7 @@ generate_report() {
             echo -e "     ${BLUE}│${NC}  ls -la"
             echo -e "     ${BLUE}└─${NC}"
             echo
-            ((high_risk++))
+            high_risk=$((high_risk+1))
         done
         echo -e "   ${YELLOW}NOTE: 'Shai-Hulud' repositories are created by the malware for exfiltration.${NC}"
         echo -e "   ${YELLOW}These should be deleted immediately after investigation.${NC}"
@@ -1159,7 +1206,7 @@ generate_report() {
             echo "   - Warning: $namespace_info"
             echo "     Found in: $file_path"
             show_file_preview "$file_path" "Contains packages from compromised namespace"
-            ((medium_risk++))
+            medium_risk=$((medium_risk+1))
         done
         echo -e "   ${YELLOW}NOTE: These namespaces have been compromised but specific versions may vary.${NC}"
         echo -e "   ${YELLOW}Check package versions against known compromise lists.${NC}"
@@ -1175,7 +1222,7 @@ generate_report() {
             echo "   - Issue: $issue_info"
             echo "     Found in: $file_path"
             show_file_preview "$file_path" "Package integrity issue: $issue_info"
-            ((medium_risk++))
+            medium_risk=$((medium_risk+1))
         done
         echo -e "   ${YELLOW}NOTE: These issues may indicate tampering with package dependencies.${NC}"
         echo -e "   ${YELLOW}Verify package versions and regenerate lockfiles if necessary.${NC}"
@@ -1193,8 +1240,8 @@ generate_report() {
             echo "   - Warning: $warning_info"
             echo "     Found in: $file_path"
             show_file_preview "$file_path" "Potential typosquatting: $warning_info"
-            ((medium_risk++))
-            ((typo_count++))
+            medium_risk=$((medium_risk+1))
+            typo_count=$((typo_count+1))
         done
         if [[ ${#TYPOSQUATTING_WARNINGS[@]} -gt 5 ]]; then
             echo "   - ... and $((${#TYPOSQUATTING_WARNINGS[@]} - 5)) more typosquatting warnings (truncated for brevity)"
@@ -1215,8 +1262,8 @@ generate_report() {
             echo "   - Warning: $warning_info"
             echo "     Found in: $file_path"
             show_file_preview "$file_path" "Network exfiltration pattern: $warning_info"
-            ((medium_risk++))
-            ((net_count++))
+            medium_risk=$((medium_risk+1))
+            net_count=$((net_count+1))
         done
         if [[ ${#NETWORK_EXFILTRATION_WARNINGS[@]} -gt 5 ]]; then
             echo "   - ... and $((${#NETWORK_EXFILTRATION_WARNINGS[@]} - 5)) more network warnings (truncated for brevity)"
