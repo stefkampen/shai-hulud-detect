@@ -214,6 +214,12 @@ The repository includes test cases to validate the script:
 
 # Test malicious XMLHttpRequest with crypto patterns (should show HIGH risk)
 ./shai-hulud-detector.sh test-cases/xmlhttp-malicious
+
+# Test lockfile false positive (should show no issues despite other package having compromised version)
+./shai-hulud-detector.sh test-cases/lockfile-false-positive
+
+# Test actual compromised package in lockfile (should show HIGH risk)
+./shai-hulud-detector.sh test-cases/lockfile-compromised
 ```
 
 ## How it Works
@@ -263,8 +269,10 @@ Recent investigations have revealed a potential connection between the Shai-Hulu
 - **Additional Compromised Versions**: `tinycolor@4.1.1` and `tinycolor@4.1.2` have been identified as compromised
 - **New Package Targets**: `angulartics2` and `koa2-swagger-ui` packages have been added to the compromised list
 
-### Enhanced Detection Capabilities (v2.4.0)
+### Enhanced Detection Capabilities (v2.5.0)
 The script now includes:
+- **Fixed lockfile false positives**: Improved package version extraction to prevent incorrect flagging of safe packages (fixes issue #37)
+- **Robust lockfile parsing**: Uses block-based JSON parsing instead of proximity-based grep to accurately extract package versions
 - **Context-aware XMLHttpRequest detection**: Reduces false positives for legitimate framework code (React Native, Next.js)
 - **Improved risk stratification**: XMLHttpRequest modifications now properly classified based on context and crypto patterns
 - **Parallel processing optimization**: ~20% performance improvement with semver pattern matching

@@ -738,12 +738,40 @@ check_package_integrity() {
                 local package_name="${package_info%:*}"
                 local malicious_version="${package_info#*:}"
 
-                if grep -q "\"$package_name\"" "$lockfile" 2>/dev/null; then
-                    local found_version
-                    found_version=$(grep -A5 "\"$package_name\"" "$lockfile" 2>/dev/null | grep '"version":' 2>/dev/null | head -1 2>/dev/null | grep -o '"[0-9]\+\.[0-9]\+\.[0-9]\+"' 2>/dev/null | tr -d '"' 2>/dev/null) || true
-                    if [[ -n "$found_version" && "$found_version" == "$malicious_version" ]]; then
-                        INTEGRITY_ISSUES+=("$org_file:Compromised package in lockfile: $package_name@$malicious_version")
-                    fi
+                # Look for package-specific blocks to avoid version misattribution
+                local found_version=""
+
+                # Try to find the package in node_modules structure (most accurate for package-lock.json)
+                if grep -q "\"node_modules/$package_name\"" "$lockfile" 2>/dev/null; then
+                    # Extract version from within the specific package block
+                    found_version=$(awk -v pkg="node_modules/$package_name" '
+                        $0 ~ "\"" pkg "\"" { in_block=1; brace_count=1 }
+                        in_block && /\{/ && !($0 ~ "\"" pkg "\"") { brace_count++ }
+                        in_block && /\}/ {
+                            brace_count--
+                            if (brace_count <= 0) { in_block=0 }
+                        }
+                        in_block && /\s*"version":/ {
+                            gsub(/.*"version"[ \t]*:[ \t]*"/, "", $0)
+                            gsub(/".*/, "", $0)
+                            print $0
+                            exit
+                        }
+                    ' "$lockfile" 2>/dev/null) || true
+
+                # Fallback: for older lockfile formats without node_modules structure
+                # Only look for exact version matches on the same line
+                elif grep -q "\"$package_name\".*:.*\"[0-9]" "$lockfile" 2>/dev/null; then
+                    # Extract version from same line (for simple dependency format)
+                    found_version=$(grep "\"$package_name\".*:.*\"[0-9]" "$lockfile" 2>/dev/null | head -1 | awk -F':' '{
+                        gsub(/.*"/, "", $2)
+                        gsub(/".*/, "", $2)
+                        print $2
+                    }' 2>/dev/null) || true
+                fi
+
+                if [[ -n "$found_version" && "$found_version" == "$malicious_version" ]]; then
+                    INTEGRITY_ISSUES+=("$org_file:Compromised package in lockfile: $package_name@$malicious_version")
                 fi
             done
 
