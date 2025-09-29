@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.5.0] - 2025-09-29
+
+### Fixed
+- **Lockfile False Positives**: Addresses GitHub issue #37 where `color-convert@1.9.3` was incorrectly flagged as compromised version `3.1.1`
+- **Improved Package Version Extraction**: Replaced proximity-based grep with block-based JSON parsing to accurately extract package versions from lockfiles
+- **Robust Lockfile Parsing**: Now correctly identifies package versions within specific `node_modules/$package_name` blocks instead of grabbing nearby version fields
+
+### Added
+- **Enhanced Test Coverage**: Added test cases for lockfile false positives and proper compromised package detection
+- **Block-based JSON Parsing**: Implemented AWK-based parsing with brace counting to ensure version extraction from correct package context
+
+### Changed
+- **Lockfile Processing Logic**: Updated `check_package_integrity()` function to use structured parsing instead of line-proximity heuristics
+- **Version Extraction Method**: Now looks for `"node_modules/$package_name"` blocks and extracts versions only from within that specific context
+- **Fallback Handling**: Improved fallback logic for older lockfile formats while maintaining accuracy
+
+### Technical Details
+- Fixed bug where `grep -A5` would incorrectly associate versions from different packages that happened to be within 5 lines
+- Implemented proper JSON block parsing with brace counting to maintain context boundaries
+- Added comprehensive test cases covering both false positive prevention and actual threat detection
+- Maintains backward compatibility with different lockfile formats (npm, yarn, pnpm)
+
 ## [2.4.0] - 2025-09-29
 
 ### Added
