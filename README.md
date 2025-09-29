@@ -69,12 +69,12 @@ chmod +x shai-hulud-detector.sh
 
 ## Compromised Packages Detected
 
-The script detects compromised packages from multiple September 2025 attacks. **Our current detection covers 571+ confirmed compromised packages** with specific version numbers, plus broader namespace detection for comprehensive protection.
+The script detects compromised packages from multiple September 2025 attacks. **Our current detection covers 600+ confirmed compromised packages** with specific version numbers, plus broader namespace detection for comprehensive protection.
 
 ### Package Detection Method
 
 The script loads compromised packages from an external file (`compromised-packages.txt`) which contains:
-- **571+ confirmed compromised package versions** with exact version numbers
+- **600+ confirmed compromised package versions** with exact version numbers
 - **11 affected namespaces** for broader detection of packages from compromised maintainer accounts
 
 ### Key Compromised Packages Include
@@ -208,6 +208,12 @@ The repository includes test cases to validate the script:
 
 # Test common crypto libraries (should not trigger HIGH risk false positives)
 ./shai-hulud-detector.sh test-cases/common-crypto-libs
+
+# Test legitimate XMLHttpRequest modifications (should show LOW risk only)
+./shai-hulud-detector.sh test-cases/xmlhttp-legitimate
+
+# Test malicious XMLHttpRequest with crypto patterns (should show HIGH risk)
+./shai-hulud-detector.sh test-cases/xmlhttp-malicious
 ```
 
 ## How it Works
@@ -257,8 +263,12 @@ Recent investigations have revealed a potential connection between the Shai-Hulu
 - **Additional Compromised Versions**: `tinycolor@4.1.1` and `tinycolor@4.1.2` have been identified as compromised
 - **New Package Targets**: `angulartics2` and `koa2-swagger-ui` packages have been added to the compromised list
 
-### Enhanced Detection Capabilities
+### Enhanced Detection Capabilities (v2.4.0)
 The script now includes:
+- **Context-aware XMLHttpRequest detection**: Reduces false positives for legitimate framework code (React Native, Next.js)
+- **Improved risk stratification**: XMLHttpRequest modifications now properly classified based on context and crypto patterns
+- **Parallel processing optimization**: ~20% performance improvement with semver pattern matching
+- **Duplicate-free package database**: Cleaned 600+ unique compromised package entries
 - Repository migration pattern detection
 - Package-lock.json integrity verification
 - Context-aware Trufflehog detection to reduce false positives
