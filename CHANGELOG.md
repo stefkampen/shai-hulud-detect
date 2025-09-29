@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.5.1] - 2025-09-29
+
+### Fixed
+- **Windows CRLF Compatibility**: Merged PR #36 to fix Windows line ending handling in compromised package loading
+- **Cross-platform Package Detection**: Ensures consistent package detection across Windows (CRLF) and Unix (LF) systems
+- **Undercounting Prevention**: Fixes issue where Windows users were missing compromised package detections due to trailing carriage returns
+
+### Changed
+- **Package Loading Robustness**: Added carriage return trimming to `load_compromised_packages()` function
+- **Cross-platform Reliability**: Improved handling of mixed line endings from different development environments
+
+### Technical Details
+- Added `line="${line%$'\r'}"` to strip trailing carriage returns before package processing
+- Maintains full compatibility with all platforms while fixing Windows-specific detection issues
+- Zero impact on Unix/Linux/macOS systems, where no carriage returns are present
+
 ## [2.5.0] - 2025-09-29
 
 ### Fixed

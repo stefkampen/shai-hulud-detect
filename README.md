@@ -123,11 +123,11 @@ Check these security advisories regularly for newly discovered compromised packa
 
 ## Latest Updates
 
-- **2025-09-24 v2.3.0**: **Semver Matching & Improved Warnings** - Merged PR #28 adding semver pattern matching to detect packages that could become compromised on update. Merged PR #27 for parallelized hash scanning with cross-platform support. Changed namespace warnings from MEDIUM to LOW risk to reduce false positives. Fixed test cases and added new test scenarios for semver matching and namespace warnings
-- **2025-09-21 v2.2.2**: **Progress Display & Cross-platform Support** - Merged PR #19 for real-time file scanning progress with percentage completion. Merged PR #26 adding comprehensive test cases for all 7 hash variants. Merged PR #25 for cross-platform file age detection. Added pnpm-lock.yaml support and enhanced error handling to prevent script hangs
-- **2025-09-19 v2.2.1**: **Missing Socket.dev Packages Added** - Added 34 additional compromised packages from Socket.dev analysis that were previously missed, including @ctrl packages (9), @nativescript-community packages (8), @rxap packages (2), and 15 standalone packages. Total coverage now includes all known compromised packages from multiple security sources
-- **2025-09-19 v2.2.0**: **Multi-Hash Detection** - Added detection for all 7 Shai-Hulud worm variants (V1-V7) using comprehensive hash analysis from Socket.dev research. Enhanced malicious file detection from single hash to complete worm evolution timeline covering September 14-16, 2025 attack campaign
-- **2025-09-19 v2.1.0**: **Enhanced Error Handling & pnpm Support** - Added robust error handling for grep pipelines to prevent script hangs (PR #13). Added pnpm-lock.yaml support with YAML-to-JSON transformation for full lockfile coverage. Improved reliability across different shell environments
+- **2025-09-29 v2.5.1**: **Windows Compatibility Fix** - Merged PR #36 adding Windows CRLF line ending support to fix undercounting of compromised packages on Windows systems. Ensures consistent package detection across all platforms (Windows, Linux, macOS)
+- **2025-09-29 v2.5.0**: **Lockfile False Positive Fix** - Fixed critical bug in package-lock.json parsing that caused false positives (issue #37). Replaced proximity-based grep with block-based JSON parsing for accurate package version extraction. Added comprehensive test cases for lockfile validation
+- **2025-09-29 v2.4.0**: **XMLHttpRequest Detection Improvements** - Added context-aware XMLHttpRequest detection to reduce false positives in React Native and Next.js applications. Improved risk stratification with HIGH/MEDIUM/LOW classifications based on crypto pattern analysis
+- **2025-09-24 v2.3.0**: **Semver Matching & Improved Warnings** - Merged PR #28 adding semver pattern matching to detect packages that could become compromised on update. Merged PR #27 for parallelized hash scanning with cross-platform support. Changed namespace warnings from MEDIUM to LOW risk to reduce false positives
+- **2025-09-21 v2.2.2**: **Progress Display & Cross-platform Support** - Merged PR #19 for real-time file scanning progress with percentage completion. Merged PR #26 adding comprehensive test cases for all 7 hash variants. Merged PR #25 for cross-platform file age detection
 
 *For complete version history, see [CHANGELOG.md](CHANGELOG.md)*
 
