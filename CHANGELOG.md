@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.4.0] - 2025-09-29
+
+### Added
+- **Context-aware XMLHttpRequest Detection**: Added intelligent detection that distinguishes between legitimate framework code and malicious crypto theft patterns
+- **New Test Cases**: Added comprehensive test scenarios for XMLHttpRequest modifications covering both legitimate (React Native, Next.js) and malicious patterns
+- **Enhanced Risk Stratification**: XMLHttpRequest modifications now properly classified based on file path context and associated crypto patterns
+
+### Changed
+- **Reduced False Positives**: XMLHttpRequest modifications in React Native (`/react-native/Libraries/Network/`) and Next.js (`/next/dist/compiled/`) paths now flagged as LOW RISK instead of HIGH RISK
+- **Improved Detection Logic**: XMLHttpRequest modifications combined with wallet addresses or malicious functions correctly flagged as HIGH RISK
+- **Package Database Cleanup**: Removed 17 duplicate entries from compromised-packages.txt, reducing from 621 to 604 unique package versions
+- **Updated Documentation**: Package count updated from 571+ to 600+ to reflect accurate database size
+
+### Fixed
+- **False Positive Resolution**: Addresses GitHub issue #35 regarding false positives for legitimate XMLHttpRequest usage in React Native and Next.js applications
+- **Risk Classification Logic**: Fixed automatic HIGH RISK classification for all XMLHttpRequest modifications regardless of context
+- **Duplicate Package Entries**: Removed duplicate compromised package entries that were causing inflated detection counts
+
+### Security
+- **Maintained Detection Efficacy**: Continues to detect actual crypto theft malware that hijacks XMLHttpRequest for wallet address replacement
+- **Enhanced Context Awareness**: Provides appropriate risk levels based on file location and associated patterns
+- **Comprehensive Coverage**: Maintains protection against all known attack vectors while reducing false positive noise
+
+### Technical Details
+- Updated XMLHttpRequest detection to check for crypto patterns (wallet addresses, malicious functions) in combination with prototype modifications
+- Added LOW RISK reporting for crypto patterns to global LOW_RISK_FINDINGS array
+- Implemented file path-based context checking for known legitimate framework locations
+- Created test cases demonstrating proper risk classification for various XMLHttpRequest usage scenarios
+
 ## [2.3.0] - 2025-09-24
 
 ### Added

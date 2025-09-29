@@ -446,9 +446,24 @@ check_crypto_theft_patterns() {
             fi
         fi
 
-        # Check for XMLHttpRequest hijacking
+        # Check for XMLHttpRequest hijacking with context-aware detection
         if grep -q "XMLHttpRequest\.prototype\.send" "$file" 2>/dev/null; then
-            CRYPTO_PATTERNS+=("$file:XMLHttpRequest prototype modification detected")
+            # Check if it's in a known legitimate framework path
+            if [[ "$file" == *"/react-native/Libraries/Network/"* ]] || [[ "$file" == *"/next/dist/compiled/"* ]]; then
+                # Check if there are also crypto patterns in the same file
+                if grep -q -E "0x[a-fA-F0-9]{40}|checkethereumw|runmask|webhook\.site|npmjs\.help" "$file" 2>/dev/null; then
+                    CRYPTO_PATTERNS+=("$file:XMLHttpRequest prototype modification with crypto patterns detected - HIGH RISK")
+                else
+                    CRYPTO_PATTERNS+=("$file:XMLHttpRequest prototype modification detected in framework code - LOW RISK")
+                fi
+            else
+                # Check if there are also crypto patterns in the same file
+                if grep -q -E "0x[a-fA-F0-9]{40}|checkethereumw|runmask|webhook\.site|npmjs\.help" "$file" 2>/dev/null; then
+                    CRYPTO_PATTERNS+=("$file:XMLHttpRequest prototype modification with crypto patterns detected - HIGH RISK")
+                else
+                    CRYPTO_PATTERNS+=("$file:XMLHttpRequest prototype modification detected - MEDIUM RISK")
+                fi
+            fi
         fi
 
         # Check for specific malicious functions from chalk/debug attack
@@ -1158,13 +1173,16 @@ generate_report() {
 
     # Report cryptocurrency theft patterns
     if [[ ${#CRYPTO_PATTERNS[@]} -gt 0 ]]; then
-        # Separate HIGH RISK and MEDIUM RISK crypto patterns
+        # Separate HIGH RISK, MEDIUM RISK, and LOW RISK crypto patterns
         local crypto_high=()
         local crypto_medium=()
+        local crypto_low=()
 
         for entry in "${CRYPTO_PATTERNS[@]}"; do
-            if [[ "$entry" == *"HIGH RISK"* ]] || [[ "$entry" == *"Known attacker wallet"* ]] || [[ "$entry" == *"XMLHttpRequest prototype"* ]]; then
+            if [[ "$entry" == *"HIGH RISK"* ]] || [[ "$entry" == *"Known attacker wallet"* ]]; then
                 crypto_high+=("$entry")
+            elif [[ "$entry" == *"LOW RISK"* ]]; then
+                crypto_low+=("$entry")
             else
                 crypto_medium+=("$entry")
             fi
@@ -1193,6 +1211,11 @@ generate_report() {
             echo -e "   ${YELLOW}Manual review recommended to determine if they are malicious.${NC}"
             echo
         fi
+
+        # Add LOW RISK crypto patterns to global LOW_RISK_FINDINGS for later reporting
+        for entry in "${crypto_low[@]}"; do
+            LOW_RISK_FINDINGS+=("Crypto pattern: ${entry}")
+        done
     fi
 
     # Report git branches
