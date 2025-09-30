@@ -6,6 +6,22 @@
 
 set -eo pipefail
 
+# Array to track temp files for cleanup
+TEMP_FILES=()
+
+# Cleanup function
+cleanup() {
+    local exit_code=$?
+    # Clean up temp files
+    for temp_file in "${TEMP_FILES[@]}"; do
+        [[ -f "$temp_file" ]] && rm -f "$temp_file"
+    done
+    exit $exit_code
+}
+
+# Set trap for cleanup on exit, interrupt, or termination
+trap cleanup EXIT INT TERM
+
 # Color codes for output
 RED='\033[0;31m'
 YELLOW='\033[1;33m'
@@ -148,6 +164,20 @@ show_file_preview() {
     fi
 }
 
+# Display progress for file scanning operations
+show_progress() {
+    local current=$1
+    local total=$2
+    local percent=0
+    [[ $total -gt 0 ]] && percent=$((current * 100 / total))
+    echo -ne "\r\033[K$current / $total checked ($percent %)"
+}
+
+# Count files matching find criteria - returns integer
+count_files() {
+    find "$@" 2>/dev/null | wc -l | tr -d ' '
+}
+
 # Check for shai-hulud workflow files
 check_workflow_files() {
     local scan_dir=$1
@@ -166,7 +196,8 @@ check_file_hashes() {
     local scan_dir=$1
 
     local filesCount
-    filesCount=$(($(find "$scan_dir" -type f \( -name "*.js" -o -name "*.ts" -o -name "*.json" \) | wc -l 2>/dev/null)))
+    filesCount=$(count_files "$scan_dir" -type f \( -name "*.js" -o -name "*.ts" -o -name "*.json" \))
+    filesCount=$((filesCount))
 
     print_status "$BLUE" "🔍 Checking $filesCount files for known malicious content..."
 
@@ -184,7 +215,7 @@ check_file_hashes() {
         done
 
         filesChecked=$((filesChecked+1))
-        echo -ne "\r\033[K$filesChecked / $filesCount checked ($((filesChecked*100/filesCount)) %)"
+        show_progress "$filesChecked" "$filesCount"
     done < <(\
       find "$scan_dir" -type f \( -name "*.js" -o -name "*.ts" -o -name "*.json" \) -print0 2>/dev/null |\
       xargs -0 -P ${PARALLELISM} -I. shasum -a 256 . 2>/dev/null
@@ -353,7 +384,8 @@ check_packages() {
     local scan_dir=$1
 
     local filesCount
-    filesCount=$(($(find "$scan_dir" -name "package.json" | wc -l 2>/dev/null)))
+    filesCount=$(count_files "$scan_dir" -name "package.json")
+    filesCount=$((filesCount))
 
     print_status "$BLUE" "🔍 Checking $filesCount package.json files for compromised packages..."
 
@@ -390,7 +422,7 @@ check_packages() {
         done
 
         filesChecked=$((filesChecked+1))
-        echo -ne "\r\033[K$filesChecked / $filesCount checked ($((filesChecked*100/filesCount)) %)"
+        show_progress "$filesChecked" "$filesCount"
 
     done < <(find "$scan_dir" -name "package.json" -type f -print0 2>/dev/null)
     echo -ne "\r\033[K"
@@ -728,11 +760,12 @@ check_package_integrity() {
         if [[ -f "$lockfile" && -r "$lockfile" ]]; then
 
             # Transform pnpm-lock.yaml into pseudo-package-lock
-            org_file=$lockfile
-            if [[ "$(basename $org_file)" == "pnpm-lock.yaml" ]]; then
-                org_file=$lockfile
-                lockfile=$(mktemp lockfile.XXXXXXXX)
-                transform_pnpm_yaml $org_file > $lockfile
+            org_file="$lockfile"
+            if [[ "$(basename "$org_file")" == "pnpm-lock.yaml" ]]; then
+                org_file="$lockfile"
+                lockfile=$(mktemp "${TMPDIR:-/tmp}/lockfile.XXXXXXXX")
+                TEMP_FILES+=("$lockfile")
+                transform_pnpm_yaml "$org_file" > "$lockfile"
             fi
 
             # Look for compromised packages in lockfiles
@@ -796,9 +829,9 @@ check_package_integrity() {
             fi
 
             # Revert virtual package-lock
-            if [[ "$(basename $org_file)" == "pnpm-lock.yaml" ]]; then
-                rm $lockfile
-                lockfile=$org_file
+            if [[ "$(basename "$org_file")" == "pnpm-lock.yaml" ]]; then
+                rm "$lockfile"
+                lockfile="$org_file"
             fi
 
         fi
