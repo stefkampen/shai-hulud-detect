@@ -9,7 +9,11 @@ set -eo pipefail
 # Array to track temp files for cleanup
 TEMP_FILES=()
 
-# Cleanup function
+# Function: cleanup
+# Purpose: Clean up temporary files on script exit, interrupt, or termination
+# Args: None (uses $? for exit code)
+# Modifies: Removes files tracked in TEMP_FILES array
+# Returns: Exits with original script exit code
 cleanup() {
     local exit_code=$?
     # Clean up temp files
@@ -49,9 +53,11 @@ elif [[ "$OSTYPE" == "darwin"* ]]; then
   PARALLELISM=$(sysctl -n hw.ncpu)
 fi
 
-# Load compromised packages from external file
-# This allows for easier maintenance and updates as new compromised packages are discovered
-# Currently contains 571+ confirmed package versions from multiple September 2025 npm attacks
+# Function: load_compromised_packages
+# Purpose: Load compromised package database from external file or fallback list
+# Args: None (reads from compromised-packages.txt in script directory)
+# Modifies: COMPROMISED_PACKAGES (global array)
+# Returns: Populates COMPROMISED_PACKAGES with 604+ package:version entries
 load_compromised_packages() {
     local script_dir="$(cd "$(dirname "$0")" && pwd)"
     local packages_file="$script_dir/compromised-packages.txt"
@@ -128,7 +134,11 @@ INTEGRITY_ISSUES=()
 TYPOSQUATTING_WARNINGS=()
 NETWORK_EXFILTRATION_WARNINGS=()
 
-# Usage function
+# Function: usage
+# Purpose: Display help message and exit
+# Args: None
+# Modifies: None
+# Returns: Exits with code 1
 usage() {
     echo "Usage: $0 [--paranoid] [--parallelism N] <directory_to_scan>"
     echo
@@ -143,14 +153,22 @@ usage() {
     exit 1
 }
 
-# Print colored output
+# Function: print_status
+# Purpose: Print colored status messages to console
+# Args: $1 = color code (RED, YELLOW, GREEN, BLUE, NC), $2 = message text
+# Modifies: None (outputs to stdout)
+# Returns: Prints colored message
 print_status() {
     local color=$1
     local message=$2
     echo -e "${color}${message}${NC}"
 }
 
-# Show file content preview (simplified for less verbose output)
+# Function: show_file_preview
+# Purpose: Display file context for HIGH RISK findings only
+# Args: $1 = file_path, $2 = context description
+# Modifies: None (outputs to stdout)
+# Returns: Prints formatted file preview box for HIGH RISK items only
 show_file_preview() {
     local file_path=$1
     local context="$2"
@@ -164,7 +182,11 @@ show_file_preview() {
     fi
 }
 
-# Display progress for file scanning operations
+# Function: show_progress
+# Purpose: Display real-time progress indicator for file scanning operations
+# Args: $1 = current files processed, $2 = total files to process
+# Modifies: None (outputs to stderr with ANSI escape codes)
+# Returns: Prints "X / Y checked (Z %)" with line clearing
 show_progress() {
     local current=$1
     local total=$2
@@ -173,12 +195,20 @@ show_progress() {
     echo -ne "\r\033[K$current / $total checked ($percent %)"
 }
 
-# Count files matching find criteria - returns integer
+# Function: count_files
+# Purpose: Count files matching find criteria, returns clean integer
+# Args: All arguments passed to find command (e.g., path, -name, -type)
+# Modifies: None
+# Returns: Integer count of matching files (strips whitespace)
 count_files() {
     find "$@" 2>/dev/null | wc -l | tr -d ' '
 }
 
-# Check for shai-hulud workflow files
+# Function: check_workflow_files
+# Purpose: Detect malicious shai-hulud-workflow.yml files in project directories
+# Args: $1 = scan_dir (directory to scan)
+# Modifies: WORKFLOW_FILES (global array)
+# Returns: Populates WORKFLOW_FILES array with paths to suspicious workflow files
 check_workflow_files() {
     local scan_dir=$1
     print_status "$BLUE" "🔍 Checking for malicious workflow files..."
@@ -191,7 +221,11 @@ check_workflow_files() {
     done < <(find "$scan_dir" -name "shai-hulud-workflow.yml" 2>/dev/null)
 }
 
-# Check file hashes against known malicious hash
+# Function: check_file_hashes
+# Purpose: Scan files and compare SHA256 hashes against known malicious hash list
+# Args: $1 = scan_dir (directory to scan)
+# Modifies: MALICIOUS_HASHES (global array)
+# Returns: Populates MALICIOUS_HASHES array with "file:hash" entries for matches
 check_file_hashes() {
     local scan_dir=$1
 
@@ -223,8 +257,11 @@ check_file_hashes() {
     echo -ne "\r\033[K"
 }
 
-# Reads pnpm.yaml
-# Outputs pseudo-package-lock
+# Function: transform_pnpm_yaml
+# Purpose: Convert pnpm-lock.yaml to pseudo-package-lock.json format for parsing
+# Args: $1 = packages_file (path to pnpm-lock.yaml)
+# Modifies: None
+# Returns: Outputs JSON to stdout with packages structure compatible with package-lock parser
 transform_pnpm_yaml() {
     declare -a path
     packages_file=$1
@@ -288,6 +325,11 @@ transform_pnpm_yaml() {
     echo "}"
 }
 
+# Function: semverParseInto
+# Purpose: Parse semantic version string into major, minor, patch, and special components
+# Args: $1 = version_string, $2 = major_var, $3 = minor_var, $4 = patch_var, $5 = special_var
+# Modifies: Sets variables named by $2-$5 using eval
+# Returns: Populates variables with parsed version components
 # Origin: https://github.com/cloudflare/semver_bash/blob/6cc9ce10/semver.sh
 semverParseInto() {
   local RE='[^0-9]*\([0-9]*\)[.]\([0-9]*\)[.]\([0-9]*\)\([0-9A-Za-z-]*\)'
@@ -301,23 +343,12 @@ semverParseInto() {
   eval $5=$(echo $1 | sed -e "s/$RE/\4/")
 }
 
-# Checks if test_version could match test_pattern
-# Multi-version patterns are split on '||', so "1.1.0 || 1.2.0" checks for both "1.1.0" and "1.2.0"
-# These match
-#   subject  pattern
-#   "1.1.2"  "*"
-#   "1.1.2"  "1.1.2"
-#   "1.1.2"  "~1.1.0"
-#   "1.1.2"  "^1.0.0"
-# These DO NOT match
-#   subject  pattern
-#   "1.1.2"  "1.1.1"
-#   "1.1.2"  "~1.1.3"
-#   "1.1.2"  "~1.2.0"
-#   "1.1.2"  "^1.1.3"
-#   "1.1.2"  "^1.2.0"
-#   "1.1.2"  "^2.0.0"
-#   "1.1.2"  "^0.0.0"
+# Function: semver_match
+# Purpose: Check if version matches semver pattern with caret (^), tilde (~), or exact matching
+# Args: $1 = test_subject (version to test), $2 = test_pattern (pattern like "^1.0.0" or "~1.1.0")
+# Modifies: None
+# Returns: 0 for match, 1 for no match (supports || for multi-pattern matching)
+# Examples: "1.1.2" matches "^1.0.0", "~1.1.0", "*" but not "^2.0.0" or "~1.2.0"
 semver_match() {
     local test_subject=$1
     local test_pattern=$2
@@ -379,7 +410,11 @@ semver_match() {
     return 1;
 }
 
-# Check package.json files for compromised packages
+# Function: check_packages
+# Purpose: Scan package.json files for compromised packages and suspicious namespaces
+# Args: $1 = scan_dir (directory to scan)
+# Modifies: COMPROMISED_FOUND, SUSPICIOUS_FOUND, NAMESPACE_WARNINGS (global arrays)
+# Returns: Populates arrays with matches using exact and semver pattern matching
 check_packages() {
     local scan_dir=$1
 
@@ -428,7 +463,11 @@ check_packages() {
     echo -ne "\r\033[K"
 }
 
-# Check for suspicious postinstall hooks
+# Function: check_postinstall_hooks
+# Purpose: Detect suspicious postinstall scripts that may execute malicious code
+# Args: $1 = scan_dir (directory to scan)
+# Modifies: POSTINSTALL_HOOKS (global array)
+# Returns: Populates POSTINSTALL_HOOKS array with package.json files containing hooks
 check_postinstall_hooks() {
     local scan_dir=$1
     print_status "$BLUE" "🔍 Checking for suspicious postinstall hooks..."
@@ -449,7 +488,11 @@ check_postinstall_hooks() {
     done < <(find "$scan_dir" -name "package.json" -print0 2>/dev/null)
 }
 
-# Check for suspicious content patterns
+# Function: check_content
+# Purpose: Search for suspicious content patterns like webhook.site and malicious endpoints
+# Args: $1 = scan_dir (directory to scan)
+# Modifies: SUSPICIOUS_CONTENT (global array)
+# Returns: Populates SUSPICIOUS_CONTENT array with files containing suspicious patterns
 check_content() {
     local scan_dir=$1
     print_status "$BLUE" "🔍 Checking for suspicious content patterns..."
@@ -467,7 +510,11 @@ check_content() {
     done < <(find "$scan_dir" -type f \( -name "*.js" -o -name "*.ts" -o -name "*.json" -o -name "*.yml" -o -name "*.yaml" \) -print0 2>/dev/null)
 }
 
-# Check for cryptocurrency theft patterns (Chalk/Debug attack Sept 8, 2025)
+# Function: check_crypto_theft_patterns
+# Purpose: Detect cryptocurrency theft patterns from the Chalk/Debug attack (Sept 8, 2025)
+# Args: $1 = scan_dir (directory to scan)
+# Modifies: CRYPTO_PATTERNS, HIGH_RISK_CRYPTO (global arrays)
+# Returns: Populates arrays with wallet hijacking, XMLHttpRequest tampering, and attacker indicators
 check_crypto_theft_patterns() {
     local scan_dir=$1
     print_status "$BLUE" "🔍 Checking for cryptocurrency theft patterns..."
@@ -527,7 +574,11 @@ check_crypto_theft_patterns() {
     done < <(find "$scan_dir" -type f \( -name "*.js" -o -name "*.ts" -o -name "*.json" \) -print0 2>/dev/null)
 }
 
-# Check for shai-hulud git branches
+# Function: check_git_branches
+# Purpose: Search for suspicious git branches containing "shai-hulud" in their names
+# Args: $1 = scan_dir (directory to scan)
+# Modifies: GIT_BRANCHES (global array)
+# Returns: Populates GIT_BRANCHES array with branch names and commit hashes
 check_git_branches() {
     local scan_dir=$1
     print_status "$BLUE" "🔍 Checking for suspicious git branches..."
@@ -548,7 +599,11 @@ check_git_branches() {
     done < <(find "$scan_dir" -name ".git" -type d -print0 2>/dev/null)
 }
 
-# Helper function to determine file context
+# Function: get_file_context
+# Purpose: Classify file context for risk assessment (node_modules, source, build, etc.)
+# Args: $1 = file_path (path to file)
+# Modifies: None
+# Returns: Echoes context string (node_modules, documentation, type_definitions, build_output, configuration, source_code)
 get_file_context() {
     local file_path=$1
 
@@ -585,7 +640,11 @@ get_file_context() {
     echo "source_code"
 }
 
-# Helper function to check for legitimate patterns
+# Function: is_legitimate_pattern
+# Purpose: Identify legitimate framework/build tool patterns to reduce false positives
+# Args: $1 = file_path, $2 = content_sample (text snippet from file)
+# Modifies: None
+# Returns: 0 for legitimate, 1 for potentially suspicious
 is_legitimate_pattern() {
     local file_path=$1
     local content_sample="$2"
@@ -608,7 +667,11 @@ is_legitimate_pattern() {
     return 1  # potentially suspicious
 }
 
-# Check for Trufflehog activity and secret scanning with context awareness
+# Function: check_trufflehog_activity
+# Purpose: Detect Trufflehog secret scanning activity with context-aware risk assessment
+# Args: $1 = scan_dir (directory to scan)
+# Modifies: TRUFFLEHOG_ACTIVITY (global array)
+# Returns: Populates TRUFFLEHOG_ACTIVITY array with risk level (HIGH/MEDIUM/LOW) prefixes
 check_trufflehog_activity() {
     local scan_dir=$1
     print_status "$BLUE" "🔍 Checking for Trufflehog activity and secret scanning..."
@@ -711,7 +774,11 @@ check_trufflehog_activity() {
     done < <(find "$scan_dir" -type f \( -name "*.js" -o -name "*.py" -o -name "*.sh" -o -name "*.json" \) -print0 2>/dev/null)
 }
 
-# Check for Shai-Hulud repositories and migration patterns
+# Function: check_shai_hulud_repos
+# Purpose: Detect Shai-Hulud worm repositories and malicious migration patterns
+# Args: $1 = scan_dir (directory to scan)
+# Modifies: SHAI_HULUD_REPOS (global array)
+# Returns: Populates SHAI_HULUD_REPOS array with repository patterns and migration indicators
 check_shai_hulud_repos() {
     local scan_dir=$1
     print_status "$BLUE" "🔍 Checking for Shai-Hulud repositories and migration patterns..."
@@ -750,7 +817,11 @@ check_shai_hulud_repos() {
     done < <(find "$scan_dir" -name ".git" -type d -print0 2>/dev/null)
 }
 
-# Check package-lock.json and yarn.lock files for integrity issues
+# Function: check_package_integrity
+# Purpose: Verify package lock files for compromised packages and version integrity
+# Args: $1 = scan_dir (directory to scan)
+# Modifies: INTEGRITY_ISSUES (global array)
+# Returns: Populates INTEGRITY_ISSUES with compromised packages found in lockfiles
 check_package_integrity() {
     local scan_dir=$1
     print_status "$BLUE" "🔍 Checking package lock files for integrity issues..."
@@ -838,7 +909,11 @@ check_package_integrity() {
     done < <(find "$scan_dir" \( -name "pnpm-lock.yaml" -o -name "yarn.lock" -o -name "package-lock.json" \) -print0 2>/dev/null)
 }
 
-# Check for typosquatting and homoglyph attacks
+# Function: check_typosquatting
+# Purpose: Detect typosquatting and homoglyph attacks in package dependencies
+# Args: $1 = scan_dir (directory to scan)
+# Modifies: TYPOSQUATTING_WARNINGS (global array)
+# Returns: Populates TYPOSQUATTING_WARNINGS with Unicode chars, confusables, and similar names
 check_typosquatting() {
     local scan_dir=$1
 
@@ -992,7 +1067,11 @@ check_typosquatting() {
     done < <(find "$scan_dir" -name "package.json" -print0 2>/dev/null)
 }
 
-# Check for network exfiltration patterns
+# Function: check_network_exfiltration
+# Purpose: Detect network exfiltration patterns including suspicious domains and IPs
+# Args: $1 = scan_dir (directory to scan)
+# Modifies: NETWORK_EXFILTRATION_WARNINGS (global array)
+# Returns: Populates NETWORK_EXFILTRATION_WARNINGS with hardcoded IPs and suspicious domains
 check_network_exfiltration() {
     local scan_dir=$1
 
@@ -1148,7 +1227,11 @@ check_network_exfiltration() {
     done < <(find "$scan_dir" \( -name "*.js" -o -name "*.ts" -o -name "*.json" -o -name "*.mjs" \) -print0 2>/dev/null)
 }
 
-# Generate final report
+# Function: generate_report
+# Purpose: Generate comprehensive security report with risk stratification and findings
+# Args: $1 = paranoid_mode ("true" or "false" for extended checks)
+# Modifies: None (reads all global finding arrays)
+# Returns: Outputs formatted report to stdout with HIGH/MEDIUM/LOW risk sections
 generate_report() {
     local paranoid_mode="$1"
     echo
@@ -1519,7 +1602,11 @@ generate_report() {
     print_status "$BLUE" "=============================================="
 }
 
-# Main execution
+# Function: main
+# Purpose: Main entry point - parse arguments, load data, run all checks, generate report
+# Args: Command line arguments (--paranoid, --help, --parallelism N, directory_path)
+# Modifies: All global arrays via detection functions
+# Returns: Exit code 0 for clean, 1 for high-risk findings, 2 for medium-risk findings
 main() {
     local paranoid_mode=false
     local scan_dir=""
