@@ -121,16 +121,6 @@ Check these security advisories regularly for newly discovered compromised packa
 
 **Coverage Note**: Multiple September 2025 attacks affected 571+ packages total. Our detection aims to provide **comprehensive coverage** across both the Shai-Hulud worm (517+ packages) and Chalk/Debug crypto theft (26+ packages) attacks. Combined with namespace-based detection, this should provide excellent protection against these sophisticated supply chain compromises.
 
-## Latest Updates
-
-- **2025-10-03 v2.6.0**: **Lockfile-Aware Semver Detection** - Fixed GitHub issue #42 false positives for users with old projects that have lockfiles. Implemented intelligent lockfile detection that distinguishes between actually installed versions vs. potential update risks. Packages with safe lockfile versions now show LOW RISK instead of confusing MEDIUM RISK warnings. Added comprehensive test coverage with 3 new test cases
-- **2025-10-03 v2.5.2**: **Cross-Platform Regex Fix** - Fixed network exfiltration detection regex that failed on Windows/Git Bash/MINGW64 (issue #43). Changed from basic regex to extended regex (`grep -E`) for POSIX-compliant cross-platform compatibility. Added paranoid mode test documentation and enhanced test coverage
-- **2025-09-29 v2.5.1**: **Windows Compatibility Fix** - Merged PR #36 adding Windows CRLF line ending support to fix undercounting of compromised packages on Windows systems. Ensures consistent package detection across all platforms (Windows, Linux, macOS)
-- **2025-09-29 v2.5.0**: **Lockfile False Positive Fix** - Fixed critical bug in package-lock.json parsing that caused false positives (issue #37). Replaced proximity-based grep with block-based JSON parsing for accurate package version extraction. Added comprehensive test cases for lockfile validation
-- **2025-09-29 v2.4.0**: **XMLHttpRequest Detection Improvements** - Added context-aware XMLHttpRequest detection to reduce false positives in React Native and Next.js applications. Improved risk stratification with HIGH/MEDIUM/LOW classifications based on crypto pattern analysis
-
-*For complete version history, see [CHANGELOG.md](CHANGELOG.md)*
-
 ### Core vs Paranoid Mode
 
 **Core Mode (Default)**
@@ -404,6 +394,10 @@ If you can't submit a PR, you can still help by reporting new compromised packag
 2. Include the package name, version, and source of information
 3. Provide links to security advisories or reports
 4. We'll review and add verified packages to the detection list
+
+## Release Notes
+
+For a complete list of changes and version history, see the [CHANGELOG.md](CHANGELOG.md).
 
 ## License
 
