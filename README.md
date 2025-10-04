@@ -10,32 +10,30 @@
 
 <img src="shai_hulu_detector.jpg" alt="sshd" width="80%" />
 
-A bash script to detect indicators of compromise from the September 2025 npm supply chain attacks, including the Shai-Hulud self-replicating worm and the chalk/debug crypto theft attack. This comprehensive detector covers 571+ compromised package versions across multiple attack campaigns, providing protection against the most severe JavaScript supply chain attacks to date.
+A Bash tool that helps you spot known traces of the September 2025 npm supply-chain attacks—including the Shai-Hulud self-replicating worm and the chalk/debug crypto-theft incident. It cross-checks 571+ confirmed bad package versions across multiple campaigns and checks for the most relevant red flags in your project.
 
 ## Overview
 
-This detector covers multiple npm supply chain attacks from September 2025:
+Covers multiple npm supply chain attacks from September 2025:
 
-### 🎯 **Chalk/Debug Crypto Theft Attack** (September 8, 2025)
+### **Chalk/Debug Crypto Theft Attack** (September 8, 2025)
 - **Scope**: 18+ packages with 2+ billion weekly downloads
 - **Attack**: Cryptocurrency wallet address replacement in browsers
 - **Duration**: ~2 hours before detection
 - **Packages**: chalk, debug, ansi-styles, color-*, supports-*, and others
 - **Method**: XMLHttpRequest hijacking to steal crypto transactions
 
-### 🐛 **Shai-Hulud Self-Replicating Worm** (September 14-16, 2025)
+### **Shai-Hulud Self-Replicating Worm** (September 14-16, 2025)
 - **Scope**: 517+ packages across multiple namespaces
 - **Attack**: Credential harvesting and self-propagation
 - **Method**: Uses Trufflehog to scan for secrets, publishes stolen data to GitHub
 - **Propagation**: Self-replicates using stolen npm tokens
 - **Packages**: @ctrl/*, @crowdstrike/*, @operato/*, and many others
 
-The script detects indicators from both attacks to provide comprehensive protection against these sophisticated supply chain compromises.
-
 ## Quick Start
 
 ```bash
-# Clone the repository (required for compromised package list)
+# Clone the repository
 git clone https://github.com/username/shai-hulud-detector.git
 cd shai-hulud-detector
 
@@ -67,31 +65,11 @@ chmod +x shai-hulud-detector.sh
 ### Low Risk Indicators
 - **Namespace warnings**: Packages from namespaces known to be affected (@ctrl, @crowdstrike, @art-ws, @ngx, @nativescript-community) but at safe versions
 
-## Compromised Packages Detected
-
-The script detects compromised packages from multiple September 2025 attacks. **Our current detection covers 600+ confirmed compromised packages** with specific version numbers, plus broader namespace detection for comprehensive protection.
-
 ### Package Detection Method
 
-The script loads compromised packages from an external file (`compromised-packages.txt`) which contains:
+The script loads a list of the compromised packages from an external file (`compromised-packages.txt`) which contains:
 - **600+ confirmed compromised package versions** with exact version numbers
 - **11 affected namespaces** for broader detection of packages from compromised maintainer accounts
-
-### Key Compromised Packages Include
-- `@ctrl/tinycolor@4.1.1, 4.1.2` - Shai-Hulud attack vector (2M+ weekly downloads)
-- `chalk@5.6.1`, `debug@4.4.2` - Chalk/Debug crypto theft attack (2B+ weekly downloads)
-- `@art-ws/*` packages (16+ packages) - Art workspace utilities
-- `@crowdstrike/*` packages (25+ packages) - CrowdStrike-related packages
-- `@nativescript-community/*` packages (40+ packages) - NativeScript community tools
-- `ngx-bootstrap`, `angulartics2`, `koa2-swagger-ui` - Popular standalone packages
-
-### Affected Namespaces (Complete List)
-- `@ctrl/*` - Control utility packages
-- `@crowdstrike/*` - CrowdStrike-related packages
-- `@art-ws/*` - Art workspace packages
-- `@ngx/*` - Angular-related packages
-- `@nativescript-community/*` - NativeScript community packages
-- `@ahmedhfarag/*`, `@operato/*`, `@teselagen/*`, `@things-factory/*`, `@hestjs/*`, `@nstudio/*` - Additional affected namespaces
 
 ### Maintaining and Updating the Package List
 
@@ -131,7 +109,7 @@ Check these security advisories regularly for newly discovered compromised packa
 **Paranoid Mode (`--paranoid`)**
 - Includes all core Shai-Hulud detection PLUS additional security checks
 - Adds typosquatting detection and network exfiltration pattern analysis
-- ⚠️ **Important**: Paranoid features are general security tools, not specific to Shai-Hulud
+- **Important**: Paranoid features are general security tools, not specific to Shai-Hulud
 - May produce more false positives from legitimate code
 - Useful for comprehensive security auditing
 
@@ -338,7 +316,7 @@ The script now includes:
 
 ## Contributing
 
-We welcome contributions to improve the Shai-Hulud detector! The community's help is crucial for keeping pace with this evolving threat.
+We welcome contributions to improve any of the code, documentation, tests and packages covered. 
 
 ### How to Contribute
 
