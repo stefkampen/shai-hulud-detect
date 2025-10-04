@@ -133,6 +133,7 @@ LOW_RISK_FINDINGS=()
 INTEGRITY_ISSUES=()
 TYPOSQUATTING_WARNINGS=()
 NETWORK_EXFILTRATION_WARNINGS=()
+LOCKFILE_SAFE_VERSIONS=()
 
 # Function: usage
 # Purpose: Display help message and exit
@@ -443,8 +444,25 @@ check_packages() {
                     # Exact match, certainly compromised
                     COMPROMISED_FOUND+=("$package_file:$package_name@$package_version")
                 elif semver_match "${malicious_version}" "${package_version}"; then
-                    # Semver pattern match, /maybe/ compromised
-                    SUSPICIOUS_FOUND+=("$package_file:$package_name@$package_version")
+                    # Semver pattern match - check lockfile for actual installed version
+                    local package_dir
+                    package_dir=$(dirname "$package_file")
+                    local actual_version
+                    actual_version=$(get_lockfile_version "$package_name" "$package_dir")
+
+                    if [[ -n "$actual_version" ]]; then
+                        # Found actual version in lockfile
+                        if [[ "$actual_version" == "$malicious_version" ]]; then
+                            # Actual installed version is compromised
+                            COMPROMISED_FOUND+=("$package_file:$package_name@$actual_version")
+                        else
+                            # Lockfile has safe version but package.json range could update to compromised
+                            LOCKFILE_SAFE_VERSIONS+=("$package_file:$package_name@$package_version (locked to $actual_version - safe)")
+                        fi
+                    else
+                        # No lockfile or package not found - potential risk on install/update
+                        SUSPICIOUS_FOUND+=("$package_file:$package_name@$package_version")
+                    fi
                 fi
             done
         done < <(awk '/"dependencies":|"devDependencies":/{flag=1;next}/}/{flag=0}flag' "${package_file}")
@@ -665,6 +683,90 @@ is_legitimate_pattern() {
     fi
 
     return 1  # potentially suspicious
+}
+
+# Function: get_lockfile_version
+# Purpose: Extract actual installed version from lockfile for a specific package
+# Args: $1 = package_name, $2 = package_json_dir (directory containing package.json)
+# Modifies: None
+# Returns: Echoes installed version or empty string if not found
+get_lockfile_version() {
+    local package_name="$1"
+    local package_dir="$2"
+
+    # Check for package-lock.json first (most common)
+    if [[ -f "$package_dir/package-lock.json" ]]; then
+        # Use the existing logic from check_package_integrity for block-based parsing
+        local found_version
+        found_version=$(awk -v pkg="node_modules/$package_name" '
+            $0 ~ "\"" pkg "\":" { in_block=1; brace_count=1 }
+            in_block && /\{/ && !($0 ~ "\"" pkg "\":") { brace_count++ }
+            in_block && /\}/ {
+                brace_count--
+                if (brace_count <= 0) { in_block=0 }
+            }
+            in_block && /\s*"version":/ {
+                # Extract version value between quotes
+                split($0, parts, "\"")
+                for (i in parts) {
+                    if (parts[i] ~ /^[0-9]/) {
+                        print parts[i]
+                        exit
+                    }
+                }
+            }
+        ' "$package_dir/package-lock.json" 2>/dev/null)
+
+        if [[ -n "$found_version" ]]; then
+            echo "$found_version"
+            return
+        fi
+    fi
+
+    # Check for yarn.lock
+    if [[ -f "$package_dir/yarn.lock" ]]; then
+        # Yarn.lock format: package-name@version:
+        local found_version
+        found_version=$(grep "^\"\\?$package_name@" "$package_dir/yarn.lock" 2>/dev/null | head -1 | sed 's/.*@\([^"]*\).*/\1/' 2>/dev/null)
+        if [[ -n "$found_version" ]]; then
+            echo "$found_version"
+            return
+        fi
+    fi
+
+    # Check for pnpm-lock.yaml
+    if [[ -f "$package_dir/pnpm-lock.yaml" ]]; then
+        # Use transform_pnpm_yaml and then parse like package-lock.json
+        local temp_lockfile
+        temp_lockfile=$(mktemp "${TMPDIR:-/tmp}/pnpm-parse.XXXXXXXX")
+        TEMP_FILES+=("$temp_lockfile")
+
+        transform_pnpm_yaml "$package_dir/pnpm-lock.yaml" > "$temp_lockfile" 2>/dev/null
+
+        local found_version
+        found_version=$(awk -v pkg="$package_name" '
+            $0 ~ "\"" pkg "\"" { in_block=1; brace_count=1 }
+            in_block && /\{/ && !($0 ~ "\"" pkg "\"") { brace_count++ }
+            in_block && /\}/ {
+                brace_count--
+                if (brace_count <= 0) { in_block=0 }
+            }
+            in_block && /\s*"version":/ {
+                gsub(/.*"version":\s*"/, "")
+                gsub(/".*/, "")
+                print $0
+                exit
+            }
+        ' "$temp_lockfile" 2>/dev/null)
+
+        if [[ -n "$found_version" ]]; then
+            echo "$found_version"
+            return
+        fi
+    fi
+
+    # No lockfile or package not found
+    echo ""
 }
 
 # Function: check_trufflehog_activity
@@ -1116,14 +1218,14 @@ check_network_exfiltration() {
             if [[ "$file" != *"package-lock.json"* && "$file" != *"yarn.lock"* && "$file" != *"/vendor/"* && "$file" != *"/node_modules/"* ]]; then
                 for domain in "${suspicious_domains[@]}"; do
                     # Use word boundaries and URL patterns to avoid false positives like "timeZone" containing "t.me"
-                    if grep -q "https\?://[^[:space:]]*$domain\|[[:space:]]$domain[[:space:/]\"\']" "$file" 2>/dev/null; then
+                    if grep -qE "https?://[^[:space:]]*$domain|[[:space:]]$domain[[:space:]/\"\']" "$file" 2>/dev/null; then
                         # Additional check - make sure it's not just a comment or documentation
                         local suspicious_usage
-                        suspicious_usage=$(grep "https\?://[^[:space:]]*$domain\|[[:space:]]$domain[[:space:/]\"\']" "$file" 2>/dev/null | grep -v "^[[:space:]]*#\|^[[:space:]]*//" 2>/dev/null | head -1 2>/dev/null) || true
+                        suspicious_usage=$(grep -E "https?://[^[:space:]]*$domain|[[:space:]]$domain[[:space:]/\"\']" "$file" 2>/dev/null | grep -vE "^[[:space:]]*#|^[[:space:]]*//" 2>/dev/null | head -1 2>/dev/null) || true
                         if [[ -n "$suspicious_usage" ]]; then
                             # Get line number and context
                             local line_info
-                            line_info=$(grep -n "https\?://[^[:space:]]*$domain\|[[:space:]]$domain[[:space:/]\"\']" "$file" 2>/dev/null | grep -v "^[[:space:]]*#\|^[[:space:]]*//" 2>/dev/null | head -1 2>/dev/null) || true
+                            line_info=$(grep -nE "https?://[^[:space:]]*$domain|[[:space:]]$domain[[:space:]/\"\']" "$file" 2>/dev/null | grep -vE "^[[:space:]]*#|^[[:space:]]*//" 2>/dev/null | head -1 2>/dev/null) || true
                             local line_num
                             line_num=$(echo "$line_info" | cut -d: -f1 2>/dev/null) || true
 
@@ -1299,6 +1401,20 @@ generate_report() {
             medium_risk=$((medium_risk+1))
         done
         echo -e "   ${YELLOW}NOTE: Manual review required to determine if these are malicious.${NC}"
+        echo
+    fi
+
+    # Report lockfile-safe packages
+    if [[ ${#LOCKFILE_SAFE_VERSIONS[@]} -gt 0 ]]; then
+        print_status "$BLUE" "ℹ️  LOW RISK: Packages with safe lockfile versions:"
+        for entry in "${LOCKFILE_SAFE_VERSIONS[@]}"; do
+            local file_path="${entry%:*}"
+            local package_info="${entry#*:}"
+            echo "   - Package: $package_info"
+            echo "     Found in: $file_path"
+        done
+        echo -e "   ${BLUE}NOTE: These package.json ranges could match compromised versions, but lockfiles pin to safe versions.${NC}"
+        echo -e "   ${BLUE}Your current installation is safe. Avoid running 'npm update' without reviewing changes.${NC}"
         echo
     fi
 

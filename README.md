@@ -123,11 +123,11 @@ Check these security advisories regularly for newly discovered compromised packa
 
 ## Latest Updates
 
+- **2025-10-03 v2.6.0**: **Lockfile-Aware Semver Detection** - Fixed GitHub issue #42 false positives for users with old projects that have lockfiles. Implemented intelligent lockfile detection that distinguishes between actually installed versions vs. potential update risks. Packages with safe lockfile versions now show LOW RISK instead of confusing MEDIUM RISK warnings. Added comprehensive test coverage with 3 new test cases
+- **2025-10-03 v2.5.2**: **Cross-Platform Regex Fix** - Fixed network exfiltration detection regex that failed on Windows/Git Bash/MINGW64 (issue #43). Changed from basic regex to extended regex (`grep -E`) for POSIX-compliant cross-platform compatibility. Added paranoid mode test documentation and enhanced test coverage
 - **2025-09-29 v2.5.1**: **Windows Compatibility Fix** - Merged PR #36 adding Windows CRLF line ending support to fix undercounting of compromised packages on Windows systems. Ensures consistent package detection across all platforms (Windows, Linux, macOS)
 - **2025-09-29 v2.5.0**: **Lockfile False Positive Fix** - Fixed critical bug in package-lock.json parsing that caused false positives (issue #37). Replaced proximity-based grep with block-based JSON parsing for accurate package version extraction. Added comprehensive test cases for lockfile validation
 - **2025-09-29 v2.4.0**: **XMLHttpRequest Detection Improvements** - Added context-aware XMLHttpRequest detection to reduce false positives in React Native and Next.js applications. Improved risk stratification with HIGH/MEDIUM/LOW classifications based on crypto pattern analysis
-- **2025-09-24 v2.3.0**: **Semver Matching & Improved Warnings** - Merged PR #28 adding semver pattern matching to detect packages that could become compromised on update. Merged PR #27 for parallelized hash scanning with cross-platform support. Changed namespace warnings from MEDIUM to LOW risk to reduce false positives
-- **2025-09-21 v2.2.2**: **Progress Display & Cross-platform Support** - Merged PR #19 for real-time file scanning progress with percentage completion. Merged PR #26 adding comprehensive test cases for all 7 hash variants. Merged PR #25 for cross-platform file age detection
 
 *For complete version history, see [CHANGELOG.md](CHANGELOG.md)*
 
@@ -203,7 +203,7 @@ The repository includes test cases to validate the script:
 # Test legitimate crypto libraries (should show MEDIUM risk only)
 ./shai-hulud-detector.sh test-cases/legitimate-crypto
 
-# Test chalk/debug attack patterns (should show HIGH risk)
+# Test chalk/debug attack patterns (should show HIGH risk compromised packages + MEDIUM risk crypto patterns)
 ./shai-hulud-detector.sh test-cases/chalk-debug-attack
 
 # Test common crypto libraries (should not trigger HIGH risk false positives)
@@ -212,7 +212,7 @@ The repository includes test cases to validate the script:
 # Test legitimate XMLHttpRequest modifications (should show LOW risk only)
 ./shai-hulud-detector.sh test-cases/xmlhttp-legitimate
 
-# Test malicious XMLHttpRequest with crypto patterns (should show HIGH risk)
+# Test malicious XMLHttpRequest with crypto patterns (should show HIGH risk crypto theft + MEDIUM risk XMLHttpRequest patterns)
 ./shai-hulud-detector.sh test-cases/xmlhttp-malicious
 
 # Test lockfile false positive (should show no issues despite other package having compromised version)
@@ -220,7 +220,50 @@ The repository includes test cases to validate the script:
 
 # Test actual compromised package in lockfile (should show HIGH risk)
 ./shai-hulud-detector.sh test-cases/lockfile-compromised
+
+# Test packages with safe lockfile versions (should show LOW risk with lockfile protection message)
+./shai-hulud-detector.sh test-cases/lockfile-safe-versions
+
+# Test mixed lockfile scenario (should show HIGH risk for compromised + LOW risk for safe)
+./shai-hulud-detector.sh test-cases/lockfile-comprehensive-test
+
+# Test packages without lockfile (should show MEDIUM risk for potential update risks)
+./shai-hulud-detector.sh test-cases/no-lockfile-test
+
+# Test typosquatting detection with paranoid mode (should show MEDIUM risk typosquatting warnings)
+./shai-hulud-detector.sh --paranoid test-cases/typosquatting-project
+
+# Test network exfiltration detection with paranoid mode (should show HIGH risk credential harvesting + MEDIUM risk network patterns)
+./shai-hulud-detector.sh --paranoid test-cases/network-exfiltration-project
+
+# Test clean project with paranoid mode (should show no issues - verifies no false positives)
+./shai-hulud-detector.sh --paranoid test-cases/clean-project
 ```
+
+### Paranoid Mode Testing
+
+The `--paranoid` flag enables additional security checks beyond Shai-Hulud-specific detection:
+
+- **Typosquatting Detection**: Identifies packages with names similar to popular packages (e.g., "raect" instead of "react", "lodsh" instead of "lodash")
+- **Network Exfiltration Patterns**: Detects suspicious domains (webhook.site, pastebin.com), hardcoded IP addresses, WebSocket connections to external endpoints
+- **Enhanced Security Auditing**: Useful for comprehensive project security reviews
+
+**Note**: Paranoid mode may produce more false positives from legitimate code patterns, so review findings carefully.
+
+### Lockfile-Aware Detection (v2.6.0+)
+
+The script now intelligently handles projects with lockfiles to reduce false positives:
+
+- **Lockfile Detection**: Automatically detects package-lock.json, yarn.lock, and pnpm-lock.yaml files
+- **Actual Version Checking**: When semver ranges could match compromised versions, checks the actual installed version from lockfiles
+- **Smart Risk Assessment**:
+  - **HIGH RISK**: Lockfile contains exact compromised version (immediate threat)
+  - **LOW RISK**: Lockfile contains safe version (protected by lockfile, but avoid updates)
+  - **MEDIUM RISK**: No lockfile present (potential update risk)
+
+**Example**: If your package.json has `debug@^4.0.1` (which could match compromised `debug@4.4.2`), but your lockfile pins to `debug@4.0.1`, you'll see a LOW RISK message explaining that your current installation is safe.
+
+This feature addresses Issue #42 and eliminates confusion for users with older projects that have established lockfiles.
 
 ## How it Works
 
