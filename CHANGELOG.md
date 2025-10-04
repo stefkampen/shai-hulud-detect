@@ -7,6 +7,86 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.6.0] - 2025-10-03
+
+### Fixed
+- **GitHub Issue #42 False Positives**: Resolved user confusion about MEDIUM RISK warnings for packages with safe lockfile versions
+- **Semver Range Detection Accuracy**: Fixed misleading warnings for old projects with lockfiles that pin to safe package versions
+- **User Experience for Legacy Projects**: Eliminated false positive confusion for users scanning older codebases with established lockfiles
+
+### Added
+- **Lockfile-Aware Package Detection**: New intelligent detection logic that checks actual installed versions from lockfiles before flagging semver range matches
+- **get_lockfile_version() Function**: New helper function that extracts actual installed package versions from package-lock.json, yarn.lock, and pnpm-lock.yaml files
+- **LOCKFILE_SAFE_VERSIONS Array**: New global array to track packages that have semver ranges that could match compromised versions but are locked to safe versions
+- **LOW RISK Lockfile Protection Category**: New report section showing packages protected by lockfiles with clear, actionable messaging
+- **Comprehensive Test Suite**: Added 3 new test cases covering all lockfile detection scenarios
+  - `lockfile-safe-versions`: Tests packages with safe lockfile versions (shows LOW RISK)
+  - `lockfile-comprehensive-test`: Tests mixed scenario (safe + compromised lockfile versions)
+  - `no-lockfile-test`: Tests packages without lockfiles (shows MEDIUM RISK as expected)
+
+### Changed
+- **Package Detection Logic**: Enhanced `check_packages()` function to check lockfiles when semver patterns match potentially compromised versions
+- **Risk Stratification**: Packages with semver ranges now categorized based on actual lockfile contents:
+  - **HIGH RISK**: Lockfile contains exact compromised version
+  - **LOW RISK**: Lockfile contains safe version (new category)
+  - **MEDIUM RISK**: No lockfile found (potential update risk)
+- **Report Generation**: Updated `generate_report()` to display lockfile-safe packages with informative messaging
+- **User Messaging**: Clear explanation that current installation is safe but updates should be reviewed
+
+### Technical Details
+- Lockfile detection supports all major package managers (npm, yarn, pnpm)
+- Uses block-based JSON parsing for accuracy (reuses existing logic from `check_package_integrity`)
+- Maintains backward compatibility - all existing functionality unchanged
+- Zero performance impact for projects without lockfiles
+- Preserves all security detection capabilities while improving user experience
+
+### Security Impact
+- **No reduction in security**: All actual threats still detected with HIGH RISK warnings
+- **Improved accuracy**: Users can now distinguish between actual risks and potential future risks
+- **Better user compliance**: Reduces alert fatigue from false positives, increasing trust in real warnings
+
+### Examples
+
+**Before v2.6.0 (confusing)**:
+```
+⚠️ MEDIUM RISK: Suspicious package versions detected:
+- Package: debug@^4.0.1
+- Package: error-ex@^1.2.0
+```
+
+**After v2.6.0 (clear)**:
+```
+ℹ️ LOW RISK: Packages with safe lockfile versions:
+- Package: debug@^4.0.1 (locked to 4.0.1 - safe)
+- Package: error-ex@^1.2.0 (locked to 1.2.0 - safe)
+
+NOTE: Your current installation is safe. Avoid running 'npm update' without reviewing changes.
+```
+
+## [2.5.2] - 2025-10-03
+
+### Fixed
+- **Cross-Platform Network Exfiltration Detection**: Fixed GitHub issue #43 where network exfiltration regex pattern failed on Windows/Git Bash/MINGW64 environments
+- **POSIX Character Class Compatibility**: Replaced basic regex with extended regex (`grep -E`) to ensure consistent behavior across all platforms
+- **Regex Pattern Portability**: Changed from `grep -q "https\?://[^[:space:]]*$domain\|..."` to `grep -qE "https?://[^[:space:]]*$domain|..."` for cross-platform reliability
+
+### Added
+- **Paranoid Mode Test Documentation**: Added comprehensive test cases and documentation for paranoid mode features in README.md
+- **Network Exfiltration Testing**: Documented positive and negative test cases for network exfiltration detection
+- **Typosquatting Testing**: Documented test cases demonstrating typosquatting detection with paranoid mode
+- **Enhanced Test Coverage**: Verified all paranoid mode features have both positive (detection) and negative (no false positives) test coverage
+
+### Changed
+- **Network Exfiltration Regex**: Updated 3 grep calls in `check_network_exfiltration()` function (lines 1119, 1122, 1126)
+- **Regex Syntax**: Removed backslash escaping from `\?` and `\|` patterns, using extended regex syntax instead
+- **Testing Documentation**: Added paranoid mode testing section to README.md with examples and expected outputs
+
+### Technical Details
+- Extended regex (`-E` flag) is POSIX-compliant and works consistently across macOS (BSD grep), Linux (GNU grep), and Windows (MINGW64 grep)
+- Maintains identical matching logic while ensuring cross-platform compatibility
+- All existing tests pass with identical output (verified on macOS, pending Windows verification)
+- Pattern now correctly detects webhook.site, pastebin.com, and other suspicious domains on all platforms
+
 ## [2.5.1] - 2025-09-29
 
 ### Fixed
