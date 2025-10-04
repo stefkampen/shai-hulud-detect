@@ -1027,6 +1027,20 @@ check_typosquatting() {
         "jquery" "bootstrap" "socket.io" "redis" "mongoose" "passport"
     )
 
+    # Track packages already warned about to prevent duplicates
+    local warned_packages=()
+
+    # Helper function to check if package already warned about
+    already_warned() {
+        local pkg="$1"
+        local file="$2"
+        local key="$file:$pkg"
+        for warned in "${warned_packages[@]}"; do
+            [[ "$warned" == "$key" ]] && return 0
+        done
+        return 1
+    }
+
     # Cyrillic and Unicode lookalike characters for common ASCII characters
     # Using od to detect non-ASCII characters in package names
     while IFS= read -r -d '' package_file; do
@@ -1042,7 +1056,7 @@ check_typosquatting() {
                 in_deps && /^[[:space:]]*"[^"]+":/ {
                     gsub(/^[[:space:]]*"/, "", $0)
                     gsub(/".*$/, "", $0)
-                    if ($0 ~ /^[a-zA-Z@][a-zA-Z0-9@\/\._-]*$/) print $0
+                    if (length($0) > 1) print $0
                 }
             ' "$package_file" | sort -u)
 
@@ -1062,7 +1076,10 @@ check_typosquatting() {
 
                 if [[ $has_unicode -eq 1 ]]; then
                     # Simplified check - if it contains non-standard characters, flag it
-                    TYPOSQUATTING_WARNINGS+=("$package_file:Potential Unicode/homoglyph characters in package: $package_name")
+                    if ! already_warned "$package_name" "$package_file"; then
+                        TYPOSQUATTING_WARNINGS+=("$package_file:Potential Unicode/homoglyph characters in package: $package_name")
+                        warned_packages+=("$package_file:$package_name")
+                    fi
                 fi
 
                 # Check for confusable characters (common typosquatting patterns)
@@ -1075,7 +1092,10 @@ check_typosquatting() {
                     local pattern="${confusable%:*}"
                     local target="${confusable#*:}"
                     if echo "$package_name" | grep -q "$pattern"; then
-                        TYPOSQUATTING_WARNINGS+=("$package_file:Potential typosquatting pattern '$pattern' in package: $package_name")
+                        if ! already_warned "$package_name" "$package_file"; then
+                            TYPOSQUATTING_WARNINGS+=("$package_file:Potential typosquatting pattern '$pattern' in package: $package_name")
+                            warned_packages+=("$package_file:$package_name")
+                        fi
                     fi
                 done
 
@@ -1103,7 +1123,10 @@ check_typosquatting() {
                         if [[ $diff_count -eq 1 ]]; then
                             # Additional check - avoid common legitimate variations
                             if [[ "$package_name" != *"-"* && "$popular" != *"-"* ]]; then
-                                TYPOSQUATTING_WARNINGS+=("$package_file:Potential typosquatting of '$popular': $package_name (1 character difference)")
+                                if ! already_warned "$package_name" "$package_file"; then
+                                    TYPOSQUATTING_WARNINGS+=("$package_file:Potential typosquatting of '$popular': $package_name (1 character difference)")
+                                    warned_packages+=("$package_file:$package_name")
+                                fi
                             fi
                         fi
                     fi
@@ -1114,7 +1137,10 @@ check_typosquatting() {
                         for ((i=0; i<=${#popular}; i++)); do
                             local test_name="${popular:0:$i}${popular:$((i+1))}"
                             if [[ "$package_name" == "$test_name" ]]; then
-                                TYPOSQUATTING_WARNINGS+=("$package_file:Potential typosquatting of '$popular': $package_name (missing character)")
+                                if ! already_warned "$package_name" "$package_file"; then
+                                    TYPOSQUATTING_WARNINGS+=("$package_file:Potential typosquatting of '$popular': $package_name (missing character)")
+                                    warned_packages+=("$package_file:$package_name")
+                                fi
                                 break
                             fi
                         done
@@ -1125,7 +1151,10 @@ check_typosquatting() {
                         for ((i=0; i<=${#package_name}; i++)); do
                             local test_name="${package_name:0:$i}${package_name:$((i+1))}"
                             if [[ "$test_name" == "$popular" ]]; then
-                                TYPOSQUATTING_WARNINGS+=("$package_file:Potential typosquatting of '$popular': $package_name (extra character)")
+                                if ! already_warned "$package_name" "$package_file"; then
+                                    TYPOSQUATTING_WARNINGS+=("$package_file:Potential typosquatting of '$popular': $package_name (extra character)")
+                                    warned_packages+=("$package_file:$package_name")
+                                fi
                                 break
                             fi
                         done
@@ -1157,7 +1186,10 @@ check_typosquatting() {
                                 done
 
                                 if [[ $ns_diff -ge 1 && $ns_diff -le 2 ]]; then
-                                    TYPOSQUATTING_WARNINGS+=("$package_file:Suspicious namespace variation: $namespace (similar to $suspicious)")
+                                    if ! already_warned "$package_name" "$package_file"; then
+                                        TYPOSQUATTING_WARNINGS+=("$package_file:Suspicious namespace variation: $namespace (similar to $suspicious)")
+                                        warned_packages+=("$package_file:$package_name")
+                                    fi
                                 fi
                             fi
                         fi

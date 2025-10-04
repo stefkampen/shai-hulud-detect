@@ -5,7 +5,34 @@ All notable changes to the Shai-Hulud NPM Supply Chain Attack Detector will be d
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [2.6.1] - 2025-10-03
+
+### Fixed
+- **GitHub Issue #44 Critical Security Vulnerability**: Fixed homoglyph detection bypass where Unicode characters were filtered out before detection could run
+- **AWK Filter Security Flaw**: Replaced restrictive ASCII-only regex filter with minimal length check to allow Unicode homoglyphs through to detection logic
+- **Duplicate Warning Deduplication**: Eliminated confusing duplicate warnings where same malicious package was flagged by multiple detection methods
+- **Risk Count Accuracy**: Fixed inflated risk counts where 1 malicious package could generate 2+ warnings, providing accurate threat metrics
+
+### Added
+- **Cross-Platform Unicode Detection**: Enhanced typosquatting detection to work reliably across macOS, Linux, and Windows/Git Bash environments
+- **Warning Deduplication System**: Added `already_warned()` helper function and tracking array to prevent redundant warnings for same packages
+- **Comprehensive Issue #44 Test Coverage**: Verified Unicode homoglyph detection works for packages like `reаct` (Cyrillic 'а') and `@typеs/node`
+
+### Changed
+- **AWK Package Name Filter**: Modified line 1045 from strict ASCII regex to `if (length($0) > 1)` for cross-platform Unicode compatibility
+- **Typosquatting Warning Logic**: All 6 warning addition points now check for duplicates before adding to TYPOSQUATTING_WARNINGS array
+- **User Experience**: Cleaner output with single warning per malicious package instead of multiple redundant alerts
+
+### Security Impact
+- **Critical Vulnerability Closed**: Attackers can no longer bypass detection using Unicode lookalike characters (e.g., Cyrillic letters)
+- **Enhanced Threat Detection**: Now properly detects sophisticated homoglyph attacks that were previously missed
+- **Accurate Risk Assessment**: Users get correct threat counts and cleaner, more trustworthy output
+
+### Technical Details
+- Uses standard AWK `length()` function available on all platforms (gawk, mawk, nawk, BSD awk)
+- Maintains existing cross-platform Unicode detection using `LC_ALL=C` + `grep`
+- Deduplication uses bash arrays and functions for maximum compatibility
+- Zero performance impact, preserves all existing detection capabilities
 
 ## [2.6.0] - 2025-10-03
 
@@ -44,24 +71,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **No reduction in security**: All actual threats still detected with HIGH RISK warnings
 - **Improved accuracy**: Users can now distinguish between actual risks and potential future risks
 - **Better user compliance**: Reduces alert fatigue from false positives, increasing trust in real warnings
-
-### Examples
-
-**Before v2.6.0 (confusing)**:
-```
-⚠️ MEDIUM RISK: Suspicious package versions detected:
-- Package: debug@^4.0.1
-- Package: error-ex@^1.2.0
-```
-
-**After v2.6.0 (clear)**:
-```
-ℹ️ LOW RISK: Packages with safe lockfile versions:
-- Package: debug@^4.0.1 (locked to 4.0.1 - safe)
-- Package: error-ex@^1.2.0 (locked to 1.2.0 - safe)
-
-NOTE: Your current installation is safe. Avoid running 'npm update' without reviewing changes.
-```
 
 ## [2.5.2] - 2025-10-03
 
